@@ -1,0 +1,9 @@
+Flask>=3.0.0
+flask-cors>=4.0.0
+gunicorn>=21.2.0
+requests>=2.31.0
+pulp>=2.8.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+cryptography>=42.0.0
+reportlab>=4.0.0

@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: synaptwin
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: "cd s24_frontend && npm install && npm run build && cd ../s24_backend && pip install -r requirements.txt"
+    startCommand: "cd s24_backend && gunicorn server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: FERNET_SECRET_KEY
+        sync: false

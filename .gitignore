@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+venv/
+env/
+.venv/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Build outputs
+s24_frontend/dist/
+dist/
+build/
+
+# Environment files & secrets
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary cache files
+.tempmediaStorage/
+scratch/
+
+# Runtime-generated scratch/cache output (regenerated automatically)
+s24_backend/hourly_results.json
+s24_backend/data/cache/*.json
