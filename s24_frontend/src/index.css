@@ -1045,3 +1045,63 @@ input:checked + .toggle-slider:before {
     height: 320px;
   }
 }
+
+/* ==========================================================================
+   SIMULATED ALERT CENTER & PUSH NOTIFICATION ANIMATIONS
+   ========================================================================== */
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(110%) scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes toastCountdown {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulseLiveIcon {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pulse-live-icon {
+  animation: pulseLiveIcon 1.4s ease-in-out infinite;
+}
+
+.push-notification-toast:hover {
+  transform: translateY(-2px);
+  transition: transform 0.2s ease;
+}
+

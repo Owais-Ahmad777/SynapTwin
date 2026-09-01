@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Zap, Calendar, TrendingUp, ArrowLeft, Sun, Cloud, CloudRain, 
-  AlertTriangle, ShieldCheck, IndianRupee, Leaf, Battery, Award, 
-  Clock, Activity, Info, BarChart2, CheckCircle2, ChevronRight, Download
+  AlertTriangle, IndianRupee, Leaf, Award, 
+  Activity, Info 
 } from 'lucide-react';
 import {
-  ResponsiveContainer, ComposedChart, AreaChart, Area, BarChart, Bar,
+  ResponsiveContainer, ComposedChart, AreaChart, Area, Bar,
   LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine
 } from 'recharts';
+import MultiYearTrends from './MultiYearTrends';
 
 export default function HistoryView() {
   const [historyData, setHistoryData] = useState(null);
   const [selectedDayIndex, setSelectedDayIndex] = useState(8); // Default to Day 8 (Monsoon outage day for demo interest)
   const [activeChartTab, setActiveChartTab] = useState('energy'); // 'energy', 'financial', 'fairness'
+  const [viewMode, setViewMode] = useState('30day'); // '30day' | 'multiyear'
   const [loading, setLoading] = useState(true);
   const [fetchDurationMs, setFetchDurationMs] = useState(0);
 
@@ -183,13 +185,79 @@ export default function HistoryView() {
       {/* Main Container */}
       <main style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 24 }}>
         
-        {/* SECTION 1: Cumulative Monthly Totals Banner */}
-        <section>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '14px', fontWeight: 800, color: '#f8fafc' }}>
-              <Award size={18} color="#10b981" />
-              <span>30-Day Cumulative Performance &amp; Savings Summary</span>
-            </div>
+        {/* Navigation Switcher: 30-Day Historical Trend vs Multi-Year Projection */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{
+            display: 'flex',
+            gap: 8,
+            background: 'rgba(0, 0, 0, 0.4)',
+            padding: '5px',
+            borderRadius: '10px',
+            border: '1px solid rgba(255, 255, 255, 0.08)'
+          }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('30day')}
+              style={{
+                background: viewMode === '30day' ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'transparent',
+                color: viewMode === '30day' ? '#ffffff' : '#94a3b8',
+                border: 'none',
+                padding: '8px 18px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'all 0.2s',
+              }}
+            >
+              <Calendar size={14} />
+              <span>30-Day Historical Trend (720 Hours)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('multiyear')}
+              style={{
+                background: viewMode === 'multiyear' ? 'linear-gradient(135deg, #10b981, #059669)' : 'transparent',
+                color: viewMode === 'multiyear' ? '#ffffff' : '#94a3b8',
+                border: 'none',
+                padding: '8px 18px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                transition: 'all 0.2s',
+              }}
+            >
+              <TrendingUp size={14} />
+              <span>Multi-Year Projected Benchmark (5–10 Years)</span>
+            </button>
+          </div>
+
+          <div style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+            {viewMode === '30day' 
+              ? '📊 30-day simulated physics dataset (hourly resolution)' 
+              : '📈 Multi-year projected synthetic benchmark (PV degradation & tariff escalation)'}
+          </div>
+        </div>
+
+        {viewMode === 'multiyear' ? (
+          <MultiYearTrends />
+        ) : (
+          <>
+            {/* SECTION 1: Cumulative Monthly Totals Banner */}
+            <section>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '14px', fontWeight: 800, color: '#f8fafc' }}>
+                  <Award size={18} color="#10b981" />
+                  <span>30-Day Cumulative Performance &amp; Savings Summary</span>
+                </div>
             <span style={{ fontSize: '11px', color: '#64748b' }}>
               Calculated across 30 authentic daily optimization cycles (22 Weekdays, 8 Weekends)
             </span>
@@ -560,6 +628,8 @@ export default function HistoryView() {
             </div>
           </section>
         )}
+      </>
+    )}
 
       </main>
     </div>

@@ -23,10 +23,6 @@ export default function App() {
            window.location.hash.includes('history');
   });
 
-  if (isHistoryView) {
-    return <HistoryView />;
-  }
-
   const [simData, setSimData] = useState(null);
   const [geoData, setGeoData] = useState(null);
   const [trajectoryData, setTrajectoryData] = useState([]);
@@ -230,6 +226,7 @@ export default function App() {
   const rawHourData = simData?.hourly?.find(h => h.hour === currentHour) || simData?.hourly?.[0];
   const hourData = rawHourData ? {
     ...rawHourData,
+    raw_disaster_type: rawHourData.disaster_type,
     is_disaster_active: isDisasterActive,
     disaster_type: isDisasterActive ? simParams.disaster_type : 'none',
     mode: isDisasterActive ? 'DISASTER_TRIAGE' : (rawHourData.is_outage ? 'DISASTER_TRIAGE' : 'FAIRNESS'),
@@ -242,12 +239,17 @@ export default function App() {
     simParams.disaster_type !== 'monsoon_waterlogging'
   );
 
+  if (isHistoryView) {
+    return <HistoryView />;
+  }
+
   return (
     <div className="app-container">
-      {/* 1. Global Header */}
+      {/* 1. Global Header with Anchored Alert Center */}
       <Header 
         currentHour={currentHour}
         hourData={hourData}
+        simParams={simParams}
         isOutage={hourData?.is_outage}
         isDisasterActive={Boolean(simParams.is_disaster_active && simParams.disaster_type && simParams.disaster_type !== 'none')}
         disasterType={simParams.disaster_type}

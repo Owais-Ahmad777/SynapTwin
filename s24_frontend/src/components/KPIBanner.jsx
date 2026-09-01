@@ -141,17 +141,26 @@ export default function KPIBanner({
             <div>
               <b style={{ color: '#fca5a5' }}>EXTREME HEATWAVE DEMAND RESPONSE PROTOCOL ACTIVE (44°C):</b>{' '}
               <span style={{ color: '#cbd5e1' }}>
-                Campus AC chillers surging by +35% to <b>{totalLoadKw.toFixed(1)} kW</b> peak demand. Shared battery is actively discharging at maximum rate <b>(84.0 kW)</b> to clamp peak grid imports and avoid TPCODL Maximum Demand Indicator (MDI) penal surcharges.
+                {isOutage 
+                  ? <>Campus AC chillers surging by +35% to <b>{totalLoadKw.toFixed(1)} kW</b> under 11kV grid outage. Shared battery is executing emergency islanded discharge <b>({(hourData.battery_used_kw || 84.0).toFixed(1)} kW)</b> to sustain priority cooling &amp; life-safety.</>
+                  : <>Campus AC chillers surging by +35% to <b>{totalLoadKw.toFixed(1)} kW</b> peak demand. Shared battery is actively discharging at maximum rate <b>({(hourData.battery_used_kw || 84.0).toFixed(1)} kW)</b> to clamp peak grid imports and avoid TPCODL Maximum Demand Indicator (MDI) penal surcharges.</>
+                }
               </span>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <span className="kpi-pill" style={{ background: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5', border: '1px solid #ef4444', fontWeight: 600 }}>
-              MDI CLAMP: -84.0 kW
+              MDI CLAMP: -{(hourData.battery_used_kw || 84.0).toFixed(1)} kW
             </span>
-            <span className="kpi-pill" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
-              GRID CONNECTED
-            </span>
+            {isOutage ? (
+              <span className="kpi-pill" style={{ background: 'rgba(239, 68, 68, 0.25)', color: '#fca5a5', border: '1px solid #ef4444', fontWeight: 600 }}>
+                GRID: CUT (ISLANDED)
+              </span>
+            ) : (
+              <span className="kpi-pill" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
+                GRID CONNECTED
+              </span>
+            )}
           </div>
         </div>
       )}

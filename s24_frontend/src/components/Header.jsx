@@ -1,17 +1,19 @@
 import React from 'react';
 import { 
-  Zap, Shield, AlertTriangle, BatteryCharging, Leaf, 
-  UserCheck, Building2, HelpCircle, Activity, RotateCcw, ChevronDown, Radio, Power, ShieldCheck, ShieldAlert, Award, FileCheck, Scale, Calendar 
+  Zap, Shield, AlertTriangle, BatteryCharging, 
+  Building2, HelpCircle, Activity, RotateCcw, Power, Award, Scale, Calendar 
 } from 'lucide-react';
+import AlertCenter from './AlertCenter';
 
 export default function Header({ 
   currentHour, 
   hourData,
+  simParams,
   isOutage, 
   isDisasterActive = false,
   currentMode, 
   batteryHealth, 
-  impactMetrics, 
+  impactMetrics: _impactMetrics, 
   currentRole, 
   onRoleChange, 
   onOpenPitch,
@@ -116,6 +118,14 @@ export default function Header({
             <Award size={13} color="#38bdf8" />
             <span>Audit Certificate</span>
           </button>
+
+          {/* Simulated Alert Center (Trigger Button with Exact Badge + Dropdown Drawer + Push Toast) */}
+          <AlertCenter 
+            hourData={hourData}
+            simParams={simParams}
+            currentHour={currentHour}
+            isEmergency={isEmergency}
+          />
 
           {/* Pitch Summary Button */}
           <button 

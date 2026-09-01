@@ -27,7 +27,9 @@ from data.open_meteo import fetch_open_meteo_solar
 from data.nasa_power import irradiance_to_pv_output_kw
 from data.synthetic_load import real_campus_blocks, generate_all
 from data.campus_geo import load_campus_buildings, to_geojson
+from data.generate_multiyear_projection import generate_multiyear_projection, PROJECTED_DATA_DISCLAIMER
 from explainability.gemini_explain import explain
+from explainability.alert_generator import generate_alerts, SIMULATED_ALERT_DISCLAIMER
 from optimizer.allocation import BlockState, allocate, allocate_uncoordinated_baseline
 from optimizer.battery_health import BatteryHealthState, TIER_THRESHOLDS
 from optimizer.disaster_triage import LocationNeed, triage_allocate
@@ -563,6 +565,21 @@ def execute_simulation(
                     for b in blocks_state
                 ],
             }
+            record["alerts"] = generate_alerts(
+                hour=h,
+                is_outage=is_outage,
+                is_disaster_active=is_disaster_active,
+                disaster_type=disaster_type if is_disaster_active else "none",
+                battery_used_kw=battery_used_this_hour,
+                battery_available_kw=total_backup_kw,
+                rejected_kw=triage.rejected_kw,
+                tier_fully_served=triage.tier_fully_served,
+                blocks=record["blocks"],
+                disaster_details=disaster_details_obj,
+                backup_runtime_hours=backup_runtime_hours,
+                isolated_power_redirect_kw=isolated_redirect_kw,
+                isolated_building=isolated_block_name,
+            )
         else:
             # Normal Operation: Routine Max-Min Fairness LP
             battery_available = min(BATTERY_RATED_POWER_KW, battery_status["available_power_kw"])
@@ -618,6 +635,18 @@ def execute_simulation(
                     for b in blocks_state
                 ],
             }
+            record["alerts"] = generate_alerts(
+                hour=h,
+                is_outage=False,
+                is_disaster_active=False,
+                disaster_type="none",
+                battery_used_kw=battery_used_this_hour,
+                battery_available_kw=battery_available,
+                rejected_kw=result.rejected_kw,
+                tier_fully_served=None,
+                blocks=record["blocks"],
+                fairness_ratio=result.fairness_ratio,
+            )
 
         total_solar_generated_kwh += record["energy_mix"]["solar_kw"]
         total_battery_dispatched_kwh += record["energy_mix"]["battery_kw"]
@@ -925,6 +954,8 @@ def execute_simulation(
             "duration_hours": len(cyclone_persistent_hours),
             "is_active": bool(is_disaster_active and disaster_type == "cyclone_severe_storm"),
         },
+        "simulated_alert_disclaimer": SIMULATED_ALERT_DISCLAIMER,
+        "alerts": hourly_results[hazard_hour if (hazard_hour is not None and 0 <= hazard_hour < 24) else 12].get("alerts", []),
         "hourly": hourly_results,
     }
 
@@ -949,6 +980,7 @@ def get_status():
             "TPCODL Odisha Commercial Time-of-Use (ToU) Tariff Engine",
             "Disaster Simulation (Monsoon, Cyclone, Fire, Outage, Heatwave)",
             "Max-Min Fairness LP & Lexicographic Triage with Backup Runtime Hours",
+            "Simulated Emergency Alert System & Priority Triage Notifications",
             "Full Stacked Energy Mix (Solar + Battery + Grid)",
             "Baseline vs. Optimized Savings Metrics (kWh & INR ₹)",
             "Official Cryptographic Audit & Compliance Certificate (SHA-256)",
@@ -1083,6 +1115,52 @@ def get_simulation_comparison():
     return jsonify(results.get("scenario_comparison", results.get("outage_comparison", {})))
 
 
+@app.route("/api/alerts/active", methods=["GET", "POST"])
+def get_active_alerts():
+    """
+    Returns the list of active simulated emergency alerts for the current simulation state.
+    Supports GET (with query parameters) and POST (with JSON payload).
+    """
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+    else:
+        data = request.args.to_dict()
+
+    hour = int(data.get("hour", 20))
+    outage_hours_raw = data.get("outage_hours", [19, 20, 21])
+    if isinstance(outage_hours_raw, str):
+        outage_hours = [int(x) for x in outage_hours_raw.split(",") if x.strip()]
+    else:
+        outage_hours = list(outage_hours_raw)
+
+    disaster_type = data.get("disaster_type", "monsoon_waterlogging")
+    is_disaster_active = bool(data.get("is_disaster_active", True) and (disaster_type not in (None, "none", "")))
+    isolated_block = data.get("isolated_block") or data.get("isolated_building")
+
+    sim = execute_simulation(
+        outage_hours=outage_hours,
+        disaster_type=disaster_type,
+        is_disaster_active=is_disaster_active,
+        isolated_block=isolated_block,
+        hazard_hour=hour,
+    )
+
+    target_hour_record = next((h_rec for h_rec in sim["hourly"] if h_rec["hour"] == hour), sim["hourly"][0])
+    active_alerts = target_hour_record.get("alerts", [])
+
+    return jsonify({
+        "status": "success",
+        "is_simulated": True,
+        "disclaimer": SIMULATED_ALERT_DISCLAIMER,
+        "hour": hour,
+        "is_outage": target_hour_record["is_outage"],
+        "is_disaster_active": target_hour_record["is_disaster_active"],
+        "disaster_type": target_hour_record["disaster_type"],
+        "alerts_count": len(active_alerts),
+        "alerts": active_alerts,
+    })
+
+
 @app.route("/api/audit/certificate", methods=["GET"])
 def get_audit_certificate():
     sim_data = execute_simulation()
@@ -1197,6 +1275,31 @@ def get_historical_30day():
     return jsonify({"error": "historical data not found"}), 404
 
 
+@app.route("/api/history/multiyear", methods=["GET", "POST"])
+def get_multiyear_projection():
+    """
+    Returns 5 to 10 year synthetic benchmark projection with yearly summaries.
+    Every response includes the mandatory honesty disclaimer and data_type indicator.
+    """
+    if request.method == "POST":
+        data = request.get_json(force=True, silent=True) or {}
+    else:
+        data = request.args.to_dict()
+
+    years = int(data.get("years", 5))
+    solar_degrade = float(data.get("solar_degradation_pct", 0.5))
+    tariff_esc = float(data.get("tariff_escalation_pct", 3.5))
+    include_battery = str(data.get("include_battery_aging", "true")).lower() in ("true", "1")
+
+    projection_result = generate_multiyear_projection(
+        years=years,
+        solar_degradation_pct=solar_degrade,
+        tariff_escalation_pct=tariff_esc,
+        include_battery_aging=include_battery,
+    )
+    return jsonify(projection_result)
+
+
 # Frontend static files routing
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
@@ -1216,9 +1319,12 @@ def serve_frontend(path):
             "/api/simulation/default",
             "/api/simulation/run",
             "/api/simulation/compare",
+            "/api/alerts/active",
             "/api/audit/certificate",
             "/api/battery/trajectory",
             "/api/privacy/view",
+            "/api/history/30day",
+            "/api/history/multiyear",
         ],
     })
 
