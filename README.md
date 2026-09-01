@@ -1,5 +1,11 @@
 # SynapTwin | Community Energy Flexibility & Shared-Battery Digital Twin
 
+[![Live Production Demo](https://img.shields.io/badge/Live_Demo-synaptwin.onrender.com-brightgreen?style=for-the-badge&logo=render&logoColor=white)](https://synaptwin.onrender.com/)
+[![React 19](https://img.shields.io/badge/Frontend-React_19_%2B_Vite-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://synaptwin.onrender.com/)
+[![Flask](https://img.shields.io/badge/Backend-Flask_REST_API-4B8BBE?style=for-the-badge&logo=flask&logoColor=white)](https://synaptwin.onrender.com/)
+
+> 🌐 **Live Website URL:** [https://synaptwin.onrender.com/](https://synaptwin.onrender.com/)
+
 SynapTwin is an institutional-scale digital twin and microgrid orchestration platform designed for the Siksha 'O' Anusandhan (SOA) ITER Campus in Bhubaneswar, Odisha. The system coordinates rooftop solar generation across 16 buildings, a shared 120 kW / 360 kWh second-life EV battery energy storage system (BESS), and a campus-wide fleet of 12 shared electric scooters (driEV).
 
 ## Repository Architecture
