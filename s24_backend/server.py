@@ -707,6 +707,7 @@ def execute_simulation(
     baseline_unmet_total = 0.0
     baseline_critical_unmet_total = 0.0
     baseline_jain_sum = 0.0
+    baseline_battery_dispatched_kwh = 0.0
     
     s24_energy_served_total = 0.0
     s24_unmet_total = 0.0
@@ -734,6 +735,7 @@ def execute_simulation(
         baseline_energy_served_total += run_a_all["total_served_kw"]
         baseline_unmet_total += run_a_all["unmet_demand_kw"]
         baseline_critical_unmet_total += run_a_all["critical_unmet_kw"]
+        baseline_battery_dispatched_kwh += sum(run_a_all["allocations"].values())
         
         # Run A: Fairness on microgrid participants
         pilot_states = [b for b in b_states if b.name in microgrid_pilot_names]
@@ -770,7 +772,7 @@ def execute_simulation(
             "tier1_life_safety_served_pct": round(max(0.0, 100.0 - (baseline_critical_unmet_total / max(1.0, total_critical_demand_day)) * 100.0), 1),
             "grid_import_kwh": round(total_uncoordinated_grid_import_kwh, 1),
             "daily_tou_cost_inr": round(total_baseline_cost_inr, 0),
-            "co2_avoided_kg": round((total_solar_generated_kwh * 0.7) * GRID_CO2_KG_PER_KWH, 1),
+            "co2_avoided_kg": round((total_solar_generated_kwh + baseline_battery_dispatched_kwh) * GRID_CO2_KG_PER_KWH, 1),
             "fairness_index": round(baseline_jain_sum / 24.0, 3),
         },
         "run_b_s24": {
@@ -789,7 +791,7 @@ def execute_simulation(
             "unmet_demand_reduction_kwh": round(max(0.0, baseline_unmet_total - s24_unmet_total), 1),
             "daily_rupee_savings_inr": daily_inr_saved,
             "monthly_rupee_savings_inr": monthly_inr_saved,
-            "co2_abatement_gain_kg": round(max(0.0, co2_avoided_kg - (total_solar_generated_kwh * 0.7) * GRID_CO2_KG_PER_KWH), 1),
+            "co2_abatement_gain_kg": round(max(0.0, total_uncoordinated_grid_import_kwh - total_grid_imported_kwh) * GRID_CO2_KG_PER_KWH, 1),
             "fairness_gain_pct": round(max(0.0, ((s24_jain_sum / 24.0) - (baseline_jain_sum / 24.0)) / max(0.01, (baseline_jain_sum / 24.0)) * 100.0), 1),
         }
     }
