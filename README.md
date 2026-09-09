@@ -1,5 +1,8 @@
 # SynapTwin | Community Energy Flexibility & Shared-Battery Digital Twin
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+
 [![Live Production Demo](https://img.shields.io/badge/Live_Demo-synaptwin.onrender.com-brightgreen?style=for-the-badge&logo=render&logoColor=white)](https://synaptwin.onrender.com/)
 [![React 19](https://img.shields.io/badge/Frontend-React_19_%2B_Vite-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://synaptwin.onrender.com/)
 [![Flask](https://img.shields.io/badge/Backend-Flask_REST_API-4B8BBE?style=for-the-badge&logo=flask&logoColor=white)](https://synaptwin.onrender.com/)
