@@ -66,3 +66,10 @@ SynapTwin is architected for unified single-service web deployment on Render.com
   - `PYTHON_VERSION`: `3.14.3`
   - `GEMINI_API_KEY`: *(Optional)* Google Gemini API key for live AI natural language explainability. If omitted, SynapTwin automatically falls back to its deterministic rule-based explainer.
   - `FERNET_SECRET_KEY`: *(Optional)* Fernet key for encrypting smart meter telemetry. If omitted, a fresh key is generated at startup.
+## Author & Copyright
+
+**SynapTwin** is designed and developed by [Owais Ahmad](https://github.com/Owais-Ahmad777).
+
+© 2026 Owais Ahmad. All rights reserved.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
