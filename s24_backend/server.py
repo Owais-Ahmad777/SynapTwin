@@ -36,7 +36,7 @@ try:
 except ImportError:
     app_config = None  # type: ignore
 
-from data.open_meteo import fetch_open_meteo_solar
+from data.open_meteo import fetch_open_meteo_solar, get_open_meteo_status
 from data.nasa_power import irradiance_to_pv_output_kw
 from data.synthetic_load import real_campus_blocks, generate_all
 from data.campus_geo import load_campus_buildings, to_geojson
@@ -1497,12 +1497,17 @@ def get_status():
             fernet = app_config.fernet_status()
     except Exception:
         pass
+    try:
+        weather_fetch = get_open_meteo_status()
+    except Exception:
+        weather_fetch = {"last_error": "status unavailable"}
     return jsonify({
         "status": "online",
         "service": "SynapTwin Community Energy Flexibility Digital Twin",
         "campus": "Siksha 'O' Anusandhan (SOA) ITER Campus",
         "location": {"lat": 20.30, "lon": 85.82, "city": "Bhubaneswar, Odisha, India"},
         "weather_source": "Open-Meteo Solar API",
+        "weather_fetch": weather_fetch,
         "fleet_system": "driEV Campus Shared Scooters (Speed & Luxe)",
         "ai_explainability": gemini,
         "privacy_vault": fernet,

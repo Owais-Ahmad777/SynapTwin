@@ -27,8 +27,22 @@ SOA_ITER_LON = 85.82
 
 # In-memory TTL cache so repeated simulation runs (e.g. /alerts/active
 # re-running a full 24h sim) don't hammer the API every request.
-_MEM_CACHE: dict = {"ts": None, "payload": None}
-_MEM_TTL_SEC = 600  # 10 minutes
+_MEM_CACHE: dict = {"ts": None, "payload": None, "is_fallback": False}
+_MEM_TTL_SEC = 600  # 10 minutes for LIVE data
+_MEM_FALLBACK_TTL_SEC = 60  # 60s for fallback: one transient failure (common on
+# slow free-tier egress) must not pin the panel to fallback for 10 min per worker
+_LAST_ERROR: str = ""
+_LAST_OK_AT: str = ""
+
+
+def get_open_meteo_status() -> dict:
+    """Remote-debugging status for /api/status (Render logs aren't always handy)."""
+    return {
+        "last_error": _LAST_ERROR or None,
+        "last_ok_at": _LAST_OK_AT or None,
+        "timeout_sec": OPEN_METEO_TIMEOUT_SEC,
+        "cache_ttl_hours": OPEN_METEO_CACHE_TTL_HOURS,
+    }
 
 
 def _cache_is_fresh(fetched_at_iso: str) -> bool:
@@ -49,9 +63,11 @@ def fetch_open_meteo_solar(lat: float = SOA_ITER_LAT, lon: float = SOA_ITER_LON)
     Cache policy: memory (10 min) -> disk (TTL hours, default 6) -> clear-sky fallback.
     """
     import time as _time
+    global _LAST_ERROR, _LAST_OK_AT
     now = _time.time()
     if _MEM_CACHE["payload"] is not None and _MEM_CACHE["ts"] is not None:
-        if now - _MEM_CACHE["ts"] < _MEM_TTL_SEC:
+        _ttl = _MEM_FALLBACK_TTL_SEC if _MEM_CACHE.get("is_fallback") else _MEM_TTL_SEC
+        if now - _MEM_CACHE["ts"] < _ttl:
             return _MEM_CACHE["payload"]
 
     url = (
@@ -61,27 +77,41 @@ def fetch_open_meteo_solar(lat: float = SOA_ITER_LAT, lon: float = SOA_ITER_LON)
         f"&timezone=Asia%2FKolkata&forecast_days=2"
     )
 
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "S24-DigitalTwin/1.0 (SOA ITER Pilot)"})
-        with urllib.request.urlopen(req, timeout=OPEN_METEO_TIMEOUT_SEC) as response:
-            if response.getcode() == 200:
-                data = json.loads(response.read().decode("utf-8"))
+    # Two attempts: free-tier egress (Render Singapore cold start) routinely
+    # exceeds the short local timeout on attempt 1 but succeeds on retry.
+    data = None
+    for attempt in (1, 2):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "S24-DigitalTwin/1.0 (SOA ITER Pilot)"})
+            with urllib.request.urlopen(req, timeout=OPEN_METEO_TIMEOUT_SEC) as response:
+                if response.getcode() == 200:
+                    data = json.loads(response.read().decode("utf-8"))
+                    break
+        except Exception as e:
+            _LAST_ERROR = f"attempt {attempt}: {type(e).__name__}: {e}"
+            log.warning("[open_meteo] Live fetch failed (%s); %s", _LAST_ERROR,
+                        "retrying once" if attempt == 1 else "checking local cache / fallback")
+            if attempt == 1:
+                _time.sleep(1.0)
 
-                # Cache successful response
-                CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-                with open(CACHE_FILE, "w") as f:
-                    json.dump({
-                        "fetched_at": datetime.now(timezone.utc).isoformat(),
-                        "data": data,
-                    }, f, indent=2)
+    if data is not None:
+        try:
+            CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(CACHE_FILE, "w") as f:
+                json.dump({
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
+                    "data": data,
+                }, f, indent=2)
+        except OSError as exc:
+            log.warning("[open_meteo] Cache write failed (ephemeral disk?): %s", exc)
+        _LAST_OK_AT = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        out = _process_open_meteo_data(data, source="Open-Meteo API (Live)")
+        _MEM_CACHE.update({"ts": now, "payload": out, "is_fallback": False})
+        return out
 
-                out = _process_open_meteo_data(data, source="Open-Meteo API (Live)")
-                _MEM_CACHE.update({"ts": now, "payload": out})
-                return out
-    except Exception as e:
-        log.warning("[open_meteo] Live fetch failed (%s); checking local cache / fallback", e)
-
-    # Fallback to disk cache (respect TTL — stale cache is labelled stale)
+    # Fallback to disk cache (respect TTL — stale cache is labelled stale).
+    # NOTE: Render free-tier disk is ephemeral: every deploy/restart wipes it,
+    # so post-deploy first requests can only use live-or-fallback.
     if CACHE_FILE.exists():
         try:
             with open(CACHE_FILE, "r") as f:
@@ -91,14 +121,14 @@ def fetch_open_meteo_solar(lat: float = SOA_ITER_LAT, lon: float = SOA_ITER_LON)
                 label = f"Open-Meteo Cache ({fetched_at[:16]})" if fresh else (
                     f"Open-Meteo Cache STALE ({fetched_at[:16]} > {OPEN_METEO_CACHE_TTL_HOURS:g}h TTL)")
                 out = _process_open_meteo_data(cached["data"], source=label)
-                _MEM_CACHE.update({"ts": now, "payload": out})
+                _MEM_CACHE.update({"ts": now, "payload": out, "is_fallback": True})
                 return out
         except Exception as exc:
             log.warning("[open_meteo] Cache read failed: %s", exc)
 
     # Deterministic clear-sky fallback for SOA ITER
     out = _clear_sky_fallback()
-    _MEM_CACHE.update({"ts": now, "payload": out})
+    _MEM_CACHE.update({"ts": now, "payload": out, "is_fallback": True})
     return out
 
 

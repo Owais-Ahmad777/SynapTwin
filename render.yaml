@@ -22,3 +22,7 @@ services:
         value: "300"
       - key: RATE_LIMIT_PER_MINUTE
         value: "120"
+      - key: OPEN_METEO_TIMEOUT_SEC
+        value: "12"
+      - key: OPEN_METEO_CACHE_TTL_HOURS
+        value: "6"
