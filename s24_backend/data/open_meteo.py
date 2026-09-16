@@ -77,8 +77,11 @@ def fetch_open_meteo_solar(lat: float = SOA_ITER_LAT, lon: float = SOA_ITER_LON)
         f"&timezone=Asia%2FKolkata&forecast_days=2"
     )
 
-    # Two attempts: free-tier egress (Render Singapore cold start) routinely
-    # exceeds the short local timeout on attempt 1 but succeeds on retry.
+    # Two attempts for SLOW responses (Render Singapore cold start routinely
+    # exceeds short timeouts on attempt 1 but succeeds on retry). Never retry
+    # HTTP 429 (rate-limited): hammering a throttled shared IP only extends
+    # the ban — go straight to cache/fallback instead.
+    import urllib.error as _urlerr
     data = None
     for attempt in (1, 2):
         try:
@@ -87,6 +90,14 @@ def fetch_open_meteo_solar(lat: float = SOA_ITER_LAT, lon: float = SOA_ITER_LON)
                 if response.getcode() == 200:
                     data = json.loads(response.read().decode("utf-8"))
                     break
+        except _urlerr.HTTPError as e:
+            _LAST_ERROR = f"attempt {attempt}: HTTPError: HTTP Error {e.code}: {e.reason}"
+            log.warning("[open_meteo] Live fetch refused (%s); %s", _LAST_ERROR,
+                        "not retrying a refusal" if e.code == 429 else
+                        ("retrying once" if attempt == 1 else "checking local cache / fallback"))
+            if e.code == 429 or attempt == 2:
+                break
+            _time.sleep(1.0)
         except Exception as e:
             _LAST_ERROR = f"attempt {attempt}: {type(e).__name__}: {e}"
             log.warning("[open_meteo] Live fetch failed (%s); %s", _LAST_ERROR,
