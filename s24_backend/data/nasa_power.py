@@ -22,7 +22,13 @@ LATITUDE = 20.30
 LONGITUDE = 85.82
 
 CACHE_DIR = Path(__file__).parent / "cache"
-CACHE_DIR.mkdir(exist_ok=True)
+# Lazily created on first cache write (previously mkdir at import time —
+# import side-effect that could fail on read-only filesystems).
+def _ensure_cache_dir() -> None:
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 
 POWER_HOURLY_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 PARAM = "ALLSKY_SFC_SW_DWN"  # All-sky surface shortwave downward irradiance, W/m^2 (hourly avg)
@@ -50,8 +56,13 @@ def fetch_hourly_irradiance(date: datetime = None, timeout: int = 15) -> list[fl
 
     cache_file = _cache_path(date_str)
     if cache_file.exists():
-        with open(cache_file) as f:
-            return json.load(f)["hourly_irradiance"]
+        try:
+            with open(cache_file, encoding="utf-8") as f:
+                cached = json.load(f)["hourly_irradiance"]
+            if isinstance(cached, list) and len(cached) == 24:
+                return [float(v) for v in cached]
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
 
     try:
         params = {
@@ -73,8 +84,12 @@ def fetch_hourly_irradiance(date: datetime = None, timeout: int = 15) -> list[fl
         if any(v <= -900 for v in hourly):
             raise ValueError("POWER returned fill values for this date (no data yet)")
 
-        with open(cache_file, "w") as f:
-            json.dump({"date": date_str, "hourly_irradiance": hourly}, f)
+        _ensure_cache_dir()
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump({"date": date_str, "hourly_irradiance": hourly}, f)
+        except OSError:
+            pass
         return hourly
 
     except Exception as exc:  # noqa: BLE001 - deliberate broad fallback for demo resilience

@@ -16,6 +16,7 @@ Outputs:
 import os
 import sys
 import json
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 # Add backend directory to sys.path
@@ -24,6 +25,12 @@ sys.path.insert(0, str(backend_dir))
 
 import server
 from optimizer.allocation import BlockState, allocate, allocate_uncoordinated_baseline
+
+# Reproducibility: day configs below are FIXED (solar/load multipliers pinned),
+# but execute_simulation still does a live Open-Meteo fetch per day. Output is
+# therefore reproducible in SHAPE but weather-dependent in absolute solar kW.
+# For byte-identical regen, set SYNAPTWIN_OFFLINE_WEATHER=1 (uses clear-sky
+# fallback) — see data/open_meteo.py cache TTL.
 
 def generate_30_days():
     print("Generating 30-day SynapTwin historical dataset using authentic physics simulation...")
@@ -90,7 +97,8 @@ def generate_30_days():
         day_num = cfg["day"]
         is_disaster = cfg["disaster"] != "none"
         
-        # Execute genuine simulation for this day's exact conditions
+        # Execute genuine simulation for this day's exact conditions.
+        # Offline LLM batch (no 48 live calls × 30 days) + deterministic.
         sim = server.execute_simulation(
             outage_hours=cfg["outage_hours"],
             disaster_type=cfg["disaster"],
@@ -101,6 +109,7 @@ def generate_30_days():
             load_multiplier=cfg["load_mult"],
             day_name=cfg["day_name"],
             day_type=cfg["day_type"],
+            enable_live_llm=False,
         )
 
         day_solar_kwh = sim["environmental_metrics"]["clean_solar_generated_kwh_daily"]
@@ -134,6 +143,9 @@ def generate_30_days():
             day_battery_kwh += bat
             day_grid_kwh += grd
 
+            # Hourly CO₂ consistent with daily method: demand served without grid
+            # (previously sol-only hourly vs solar+battery daily — mismatched).
+            _avoid_h = max(0.0, dem - grd)
             hourly_records.append({
                 "day": day_num,
                 "hour": h_idx,
@@ -143,11 +155,12 @@ def generate_30_days():
                 "grid_import_kw": grd,
                 "tou_tariff_inr": tar,
                 "is_outage": is_out,
-                "co2_avoided_hourly_kg": round(sol * 0.82, 2),
+                "co2_avoided_hourly_kg": round(_avoid_h * 0.82, 2),
             })
 
-        # Grid power avoided = total clean energy supplied on campus (Solar PV + Second-Life Battery)
-        grid_avoided_kwh = round(day_solar_kwh + day_battery_kwh, 1)
+        # Grid avoided = demand - grid import (consistent with server.py;
+        # previously solar+battery double-count).
+        grid_avoided_kwh = round(max(0.0, day_demand_kwh - day_grid_kwh), 1)
         day_co2_avoided_kg = round(grid_avoided_kwh * 0.82, 1)
 
         cumulative_solar_kwh += day_solar_kwh
@@ -186,6 +199,7 @@ def generate_30_days():
     avg_fairness = round(sum(d["fairness_index"] for d in days_summary) / len(days_summary), 3)
     avg_baseline_fairness = round(sum(d["baseline_fairness_index"] for d in days_summary) / len(days_summary), 3)
 
+    _ist = timezone(timedelta(hours=5, minutes=30))
     final_payload = {
         "metadata": {
             "title": "SynapTwin 30-Day Historical Telemetry & Performance Dataset",
@@ -193,8 +207,12 @@ def generate_30_days():
             "total_days": 30,
             "total_hourly_rows": len(hourly_records),
             "data_mode": "SIMULATED / DIGITAL-TWIN DATA",
+            "data_type": "static_30day_file",
+            "is_live": False,
             "attribution": "Derived directly from SynapTwin Max-Min LP & Triage Physics Engine",
-            "generated_timestamp": "2026-08-20T16:55:00 IST",
+            "co2_method": "demand_minus_grid_import * 0.82 (consistent hourly+daily)",
+            "weather_note": "Day shapes pinned via solar_mult; absolute irradiance from Open-Meteo at generation time",
+            "generated_timestamp": datetime.now(_ist).strftime("%Y-%m-%dT%H:%M:%S IST"),
         },
         "cumulative_totals": {
             "total_solar_harvested_kwh": round(cumulative_solar_kwh, 1),

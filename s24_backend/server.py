@@ -17,31 +17,41 @@ Integrates:
 
 import json
 import hashlib
+import logging
 import time
 import os
+from functools import lru_cache
 from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+
+# Load .env first (config.py calls load_dotenv). Must precede any os.environ reads.
+try:
+    import config as app_config
+except ImportError:
+    app_config = None  # type: ignore
 
 from data.open_meteo import fetch_open_meteo_solar
 from data.nasa_power import irradiance_to_pv_output_kw
 from data.synthetic_load import real_campus_blocks, generate_all
 from data.campus_geo import load_campus_buildings, to_geojson
 from data.generate_multiyear_projection import generate_multiyear_projection, PROJECTED_DATA_DISCLAIMER
-from explainability.gemini_explain import explain
-from explainability.alert_generator import generate_alerts, SIMULATED_ALERT_DISCLAIMER
+from explainability.gemini_explain import explain, _offline_explain
+from explainability.alert_generator import generate_alerts, _offline_generate_alerts, SIMULATED_ALERT_DISCLAIMER
 from optimizer.allocation import BlockState, allocate, allocate_uncoordinated_baseline
 from optimizer.battery_health import BatteryHealthState, TIER_THRESHOLDS
 from optimizer.disaster_triage import LocationNeed, triage_allocate
 from optimizer.driev_fleet import (
+    DriEVScooter,
     create_driev_fleet,
-    total_driev_charging_demand_kw,
     redirect_solar_surplus_to_driev,
-    driev_emergency_buffer_kw,
     get_driev_fleet_summary,
     get_hourly_driev_state,
 )
 from security.privacy import SecureMeterStore, block_view, admin_view
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("synaptwin.server")
 
 # Robust static folder detection for local development and cloud production deployment (Render.com)
 _default_static = Path(__file__).parent.parent / "s24_frontend" / "dist"
@@ -49,18 +59,133 @@ if not _default_static.exists():
     _alt_static = Path(__file__).parent / "dist"
     if _alt_static.exists():
         _default_static = _alt_static
-STATIC_DIR = os.environ.get("STATIC_FOLDER", str(_default_static))
+_STATIC_OVERRIDE = ""
+if app_config is not None:
+    _STATIC_OVERRIDE = (app_config.STATIC_FOLDER_OVERRIDE or "").strip()
+STATIC_DIR = _STATIC_OVERRIDE or os.environ.get("STATIC_FOLDER", str(_default_static))
 
 app = Flask(__name__, static_folder=STATIC_DIR)
-CORS(app)
+# CORS allowlist (fixes §3.4): same-origin in prod + Vite dev + Render domain.
+# Override with CORS_ORIGINS env (comma-separated). `*` restores old open mode.
+_CORS_DEFAULT = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000,https://synaptwin.onrender.com"
+_CORS_RAW = (os.environ.get("CORS_ORIGINS", _CORS_DEFAULT) or "").strip()
+if _CORS_RAW == "*":
+    CORS(app)
+    log.warning("CORS open (*) via CORS_ORIGINS — demo mode")
+else:
+    _CORS_ORIGINS = [o.strip() for o in _CORS_RAW.split(",") if o.strip()]
+    CORS(app, origins=_CORS_ORIGINS)
+    log.info("CORS allowlist: %s", _CORS_ORIGINS)
+
+# Live LLM per-hour is OFF by default (fixes §4.2: up to 48 sequential Gemini
+# calls per request → gunicorn 120s timeout). Hourly loop uses deterministic
+# offline explainers; set ENABLE_LIVE_LLM_PER_HOUR=true to restore old behaviour.
+_ENABLE_LIVE_LLM_PER_HOUR = (os.environ.get("ENABLE_LIVE_LLM_PER_HOUR", "false") or "").strip().lower() in ("true", "1", "yes")
+
+# Optional API-key auth (fixes §3.1 without breaking open demo): if API_KEY env
+# is set, sim/privacy/audit endpoints require `X-API-Key` or `?api_key=`.
+_API_KEY_REQUIRED = (os.environ.get("API_KEY", "") or "").strip()
+
+# Simple in-memory rate limiter (fixes §3.4): 120 sim requests / 60s / IP.
+# Disabled if RATE_LIMIT_PER_MINUTE=0. Privacy/audit lighter paths share it.
+try:
+    _RATE_LIMIT_PER_MINUTE = int((os.environ.get("RATE_LIMIT_PER_MINUTE", "120") or "120").strip())
+except ValueError:
+    _RATE_LIMIT_PER_MINUTE = 120
+_RATE_BUCKETS: dict[str, list[float]] = {}
+
+# Simulation result cache (fixes §4.1 partial): 5-min TTL keyed by scenario
+# params, so repeated sandbox scrubs/alert polls don't re-run 24h + 48 LPs.
+_SIM_CACHE: dict[str, tuple[float, dict]] = {}
+_SIM_CACHE_TTL_SEC = float((os.environ.get("SIM_CACHE_TTL_SEC", "300") or "300").strip() or 300)
+
+
+def _client_ip() -> str:
+    try:
+        return (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or request.remote_addr or "unknown")
+    except Exception:
+        return "unknown"
+
+
+def _check_auth_and_rate(limit_group: str = "sim") -> tuple[bool, tuple | None]:
+    if _API_KEY_REQUIRED:
+        provided = (request.headers.get("X-API-Key", "") or request.args.get("api_key", "") or "").strip()
+        if provided != _API_KEY_REQUIRED:
+            return False, (jsonify({"error": "Unauthorized — valid X-API-Key required"}), 401)
+    if _RATE_LIMIT_PER_MINUTE and _RATE_LIMIT_PER_MINUTE > 0 and limit_group:
+        now = time.time()
+        key = f"{limit_group}:{_client_ip()}"
+        window = _RATE_BUCKETS.get(key, [])
+        window = [t for t in window if now - t < 60.0]
+        if len(window) >= _RATE_LIMIT_PER_MINUTE:
+            return False, (jsonify({"error": "Rate limit exceeded — slow down (120/min)"}), 429)
+        window.append(now)
+        _RATE_BUCKETS[key] = window
+    return True, None
+
+
+def _sim_cache_key(payload: dict) -> str:
+    try:
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
+    except Exception:
+        return ""
 
 BASE_DIR = Path(__file__).parent
 BATTERY_RATED_POWER_KW = 120.0
 BATTERY_RATED_CAPACITY_KWH = 360.0
 GRID_CO2_KG_PER_KWH = 0.82
 
-DEFAULT_BLOCKS = real_campus_blocks()
-FEEDER_LIMITS_KW = {b.name: round(max(b.peak_kw * 1.3, 30), 1) for b in DEFAULT_BLOCKS}
+# Lazy campus blocks (fixes §4.5: previously built at import, so a missing OSM
+# file broke collection/import instead of just the requesting endpoint).
+_BLOCKS_CACHE: list | None = None
+_FEEDER_CACHE: dict | None = None
+
+
+def _get_blocks_and_feeders():
+    global _BLOCKS_CACHE, _FEEDER_CACHE
+    if _BLOCKS_CACHE is None or _FEEDER_CACHE is None:
+        _BLOCKS_CACHE = real_campus_blocks()
+        _FEEDER_CACHE = {b.name: round(max(b.peak_kw * 1.3, 30), 1) for b in _BLOCKS_CACHE}
+    return _BLOCKS_CACHE, _FEEDER_CACHE
+
+
+# Backward-compat aliases (same names as before, resolved lazily on first use).
+class _LazyBlocks(list):
+    def __init__(self):
+        self._resolved = False
+    def _ensure(self):
+        if not self._resolved:
+            blocks, _ = _get_blocks_and_feeders()
+            list.extend(self, blocks)
+            self._resolved = True
+    def __iter__(self):
+        self._ensure()
+        return list.__iter__(self)
+    def __len__(self):
+        self._ensure()
+        return list.__len__(self)
+
+class _LazyFeeders(dict):
+    def __init__(self):
+        self._resolved = False
+    def _ensure(self):
+        if not self._resolved:
+            _, feeders = _get_blocks_and_feeders()
+            dict.update(self, feeders)
+            self._resolved = True
+    def __getitem__(self, k):
+        self._ensure()
+        return dict.__getitem__(self, k)
+    def get(self, k, d=None):
+        self._ensure()
+        return dict.get(self, k, d)
+    def __contains__(self, k):
+        self._ensure()
+        return dict.__contains__(self, k)
+
+DEFAULT_BLOCKS = _LazyBlocks()
+FEEDER_LIMITS_KW = _LazyFeeders()
 
 
 def get_tou_tariff(hour: int) -> float:
@@ -79,24 +204,89 @@ def get_tou_tariff(hour: int) -> float:
 
 
 def is_building_isolated(b_name: str, target_name: str | None) -> bool:
-    if not target_name:
+    """Exact-ish match for fire isolation. Previously `t in b or b in t` meant a
+    generic target like 'Block' matched EVERYTHING. Now short/generic targets
+    never match, and hostel numbers must agree."""
+    if not target_name or not b_name:
         return False
     b_low = b_name.lower().strip()
     t_low = target_name.lower().strip()
     if b_low == t_low:
         return True
-    if t_low in b_low or b_low in t_low:
-        if "hostel" in b_low and "hostel" in t_low:
-            for num in ["1", "2", "7"]:
-                if num in t_low:
-                    return num in b_low
+    # Guard: targets shorter than 4 chars (e.g. "Block", "Lab") are too generic.
+    if len(t_low) < 4:
+        return False
+    if "hostel" in b_low or "hostel" in t_low:
+        # Both must mention hostel AND agree on number if a number is given.
+        if "hostel" not in b_low or "hostel" not in t_low:
             return False
-        for letter in ["a", "c", "d", "f", "g", "s"]:
-            block_pattern = f"{letter}-block"
-            if block_pattern in t_low:
-                return block_pattern in b_low
+        for num in ["1", "2", "7"]:
+            if num in t_low:
+                return num in b_low
+        # No number in target: only exact/contains with hostel context.
+        return t_low in b_low
+    for letter in ["a", "c", "d", "f", "g", "s"]:
+        block_pattern = f"{letter}-block"
+        if block_pattern in t_low:
+            return block_pattern in b_low
+    # Fallback: require the longer string to contain the shorter one AND the
+    # match to be at least 6 chars to avoid "lib" matching "library" accidents.
+    if len(t_low) >= 6 and t_low in b_low:
+        return True
+    if len(b_low) >= 6 and b_low in t_low:
         return True
     return False
+
+
+def _safe_int(v, default: int, lo: int | None = None, hi: int | None = None) -> int:
+    try:
+        iv = int(float(v))
+    except (TypeError, ValueError):
+        return default
+    if lo is not None:
+        iv = max(lo, iv)
+    if hi is not None:
+        iv = min(hi, iv)
+    return iv
+
+
+def _safe_float(v, default: float, lo: float | None = None, hi: float | None = None) -> float:
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return default
+    if lo is not None:
+        fv = max(lo, fv)
+    if hi is not None:
+        fv = min(hi, fv)
+    return fv
+
+
+def _parse_outage_hours(raw, default=(19, 20, 21)) -> list[int]:
+    if raw is None:
+        return list(default)
+    if isinstance(raw, str):
+        parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+        out = []
+        for p in parts:
+            try:
+                h = int(float(p))
+                if 0 <= h <= 23:
+                    out.append(h)
+            except (ValueError, TypeError):
+                continue
+        return sorted(set(out))
+    if isinstance(raw, (list, tuple, set)):
+        out = []
+        for p in raw:
+            try:
+                h = int(float(p))  # type: ignore
+                if 0 <= h <= 23:
+                    out.append(h)
+            except (ValueError, TypeError):
+                continue
+        return sorted(set(out))
+    return list(default)
 
 
 DEFAULT_DISASTER_WINDOWS = {
@@ -127,15 +317,46 @@ def execute_simulation(
     cyclone_end_hour: int | None = None,
     disaster_start_hour: int | None = None,
     disaster_end_hour: int | None = None,
+    enable_live_llm: bool | None = None,
 ) -> dict:
     """
     Executes a 24-hour simulation with full energy mix, Open-Meteo weather data,
     driEV scooter fleet, TPCODL ToU tariffs, and realistic disaster scenarios.
+    All numeric inputs are clamped to safe ranges (previously unvalidated —
+    strings/negatives/huge multipliers caused 500s).
+    enable_live_llm: None → env ENABLE_LIVE_LLM_PER_HOUR; False (default) uses
+    deterministic offline explainers in the hourly loop (fixes 48 live calls).
     """
-    if outage_hours is None:
-        outage_hours = [19, 20, 21]
-
+    outage_hours = _parse_outage_hours(outage_hours, default=(19, 20, 21))
     block_load_overrides = block_load_overrides or {}
+    # Sanitise multipliers / counters defensively (direct python callers bypass endpoints).
+    try:
+        solar_multiplier = max(0.0, min(3.0, float(solar_multiplier)))
+    except (TypeError, ValueError):
+        solar_multiplier = 1.0
+    try:
+        load_multiplier = max(0.0, min(3.0, float(load_multiplier)))
+    except (TypeError, ValueError):
+        load_multiplier = 1.0
+    try:
+        days_in_service = max(0, min(3000, int(days_in_service)))
+    except (TypeError, ValueError):
+        days_in_service = 200
+    try:
+        driev_emergency_opt_in_count = max(0, min(12, int(driev_emergency_opt_in_count)))
+    except (TypeError, ValueError):
+        driev_emergency_opt_in_count = 8
+    try:
+        hazard_hour = max(0, min(23, int(hazard_hour)))
+    except (TypeError, ValueError):
+        hazard_hour = 20
+    if battery_soh_pct is not None:
+        try:
+            battery_soh_pct = max(0.0, min(100.0, float(battery_soh_pct)))
+        except (TypeError, ValueError):
+            battery_soh_pct = None
+    if enable_live_llm is None:
+        enable_live_llm = _ENABLE_LIVE_LLM_PER_HOUR
 
     # Check if disaster is active
     if disaster_type in (None, "none", "normal", "") or not is_disaster_active:
@@ -173,7 +394,12 @@ def execute_simulation(
 
     # 1. Weather Data (Open-Meteo) & Disaster Physics Overrides
     weather = fetch_open_meteo_solar()
-    today_irradiance = weather.get("today_hourly_irradiance_w_per_m2", [0.0] * 24)
+    today_irradiance = weather.get("today_hourly_irradiance_w_per_m2", [0.0] * 24) or [0.0] * 24
+    # Guard against short arrays (previously assumed exactly 24 → IndexError).
+    if len(today_irradiance) < 24:
+        today_irradiance = list(today_irradiance) + [0.0] * (24 - len(today_irradiance))
+    else:
+        today_irradiance = list(today_irradiance[:24])
     effective_load_mult = load_multiplier
 
     # Hourly solar irradiance multiplier based on active disaster and time window:
@@ -229,9 +455,13 @@ def execute_simulation(
 
     # If electrical fire isolation scenario is active, isolate selected building completely (load & solar = 0 kW)
     isolated_block_name = isolated_block or "C-Block (Academic)"
+    # Preserve pre-isolation load for honest redirect accounting (previously read
+    # back zeroed curves, so redirect was always 0).
+    isolated_original_load: dict[str, list[float]] = {}
     if is_disaster_active and disaster_type == "electrical_fire":
         for name in load_curves:
             if is_building_isolated(name, isolated_block_name):
+                isolated_original_load[name] = list(load_curves[name])
                 load_curves[name] = [0.0] * 24
         for name in pv_curves:
             if is_building_isolated(name, isolated_block_name):
@@ -251,27 +481,68 @@ def execute_simulation(
             battery.record_day_cycling(200.0)
 
     battery_status = battery.status_report()
+    # Stateful fleet template (SOC persists across hours via applied deltas).
+    # Hourly schedule still drives status (charging/ride), but surplus/V2G now
+    # mutate THIS fleet instead of a dead object (fixes §1.9).
     driev_fleet = create_driev_fleet(emergency_opt_in_count=driev_emergency_opt_in_count)
     driev_initial_summary = get_driev_fleet_summary(driev_fleet)
+
+    def _fleet_for_hour(state: dict) -> list:
+        """Rebuild live objects from deterministic hourly schedule, carrying
+        forward persistent SOC from driev_fleet where IDs match."""
+        soc_by_id = {s.id: s.soc_pct for s in driev_fleet}
+        fleet: list = []
+        for sd in state.get("scooters", []):
+            fleet.append(DriEVScooter(
+                id=sd["id"], tier=sd["tier"],
+                battery_capacity_kwh=sd["capacity_kwh"],
+                soc_pct=round(soc_by_id.get(sd["id"], sd["soc_pct"]), 1),
+                charger_power_kw=sd["charger_kw"],
+                status=sd["status"],
+                emergency_buffer_opt_in=sd["emergency_opt_in"],
+            ))
+        return fleet
+
+    def _commit_fleet(fleet: list) -> None:
+        by_id = {s.id: s.soc_pct for s in fleet}
+        for s in driev_fleet:
+            if s.id in by_id:
+                s.soc_pct = by_id[s.id]
 
     hourly_results = []
     total_solar_generated_kwh = 0.0
     total_battery_dispatched_kwh = 0.0
     total_grid_imported_kwh = 0.0
     total_uncoordinated_grid_import_kwh = 0.0
+    total_naive_grid_import_kwh = 0.0
     total_baseline_cost_inr = 0.0
     total_optimized_cost_inr = 0.0
+    total_demand_kwh_day = 0.0
 
-    usable_battery_kwh = battery_status.get("usable_capacity_kwh", 287.3)
+    # SoC tracker: previously backup_runtime used FULL usable_kwh every hour
+    # (no depletion). Now we track remaining energy across the day, recharged
+    # by solar surplus, drained by dispatch.
+    usable_battery_kwh_full = float(battery_status.get("usable_capacity_kwh", 287.3))
+    battery_remaining_kwh = usable_battery_kwh_full
+    # Life-safety (triage Tier-1 slices: medical/server/sump/shelter) energy
+    # accounting over ISLANDED hours only — the honest denominator for Tier-1 %.
+    # (Block critical_kw is broader: all-building 12% essential; triage Tier-1
+    # is the life-safety subset. Previously the audit mixed the two.)
+    tier1_demand_island_kwh = 0.0
+    tier1_served_island_kwh = 0.0
 
     # 24-Hour Simulation Loop
     for h in range(24):
+        # Heatwave: critical (AC-driven) surges with total load (previously
+        # critical used only load_multiplier, so +35% never stressed Tier-1).
+        _hw_factor = ((load_multiplier * 1.35) if (is_disaster_active and disaster_type == "heatwave_stress"
+                                                    and d_start <= h <= d_end) else (load_multiplier * 1.0))
         blocks_state = [
             BlockState(
                 name=b.name,
                 load_kw=load_curves[b.name][h],
                 solar_kw=pv_curves[b.name][h],
-                critical_kw=round(min(b.critical_kw * effective_load_mult, load_curves[b.name][h]), 2),
+                critical_kw=round(min(b.critical_kw * _hw_factor, load_curves[b.name][h]), 2),
                 feeder_limit_kw=feeder_limits[b.name],
             )
             for b in campus_blocks
@@ -288,18 +559,44 @@ def execute_simulation(
             surplus_kw=solar_surplus,
         )
 
-        # Uncoordinated baseline calculation (no sharing)
-        uncoordinated_deficit = sum(max(b.load_kw - b.solar_kw, 0.0) for b in blocks_state)
+        # TWO baselines, explicitly separated (bug-report §2.2 was right that one
+        # number can't serve both stories):
+        #  (a) Financial headline = vs GRID-ONLY campus (own solar, NO shared
+        #      battery). This is the investment case: "why buy a shared BESS +
+        #      orchestration at all". Deficit-based, so curtailed surplus solar
+        #      is never counted as served.
+        #  (b) Scenario Run A = owns the SAME battery but splits it naively
+        #      (equal parts, no sharing smarts). Its grid is tracked separately
+        #      for the Run-A/Run-B table; the orchestration edge alone is small
+        #      in kWh (its value is fairness + Tier-1 protection, not rupees).
+        _deficit_h = sum(max(b.load_kw - b.solar_kw, 0.0) for b in blocks_state)
+        _base_batt = float(battery_status.get("available_power_kw", BATTERY_RATED_POWER_KW))
+        _base_batt = min(BATTERY_RATED_POWER_KW, max(0.0, _base_batt))
+        try:
+            _run_a_h = allocate_uncoordinated_baseline(blocks_state, _base_batt)
+            _naive_used_h = float(sum(_run_a_h.get("allocations", {}).values()))
+        except Exception:
+            _naive_used_h = 0.0
+        uncoordinated_deficit = round(_deficit_h, 2)
         total_uncoordinated_grid_import_kwh += uncoordinated_deficit
         total_baseline_cost_inr += uncoordinated_deficit * hourly_tariff
+        total_naive_grid_import_kwh += max(0.0, round(_deficit_h - _naive_used_h, 2))
 
-        is_emergency_triage_hour = (
-            is_outage
-            or (is_disaster_active and disaster_type not in ("none", None, ""))
-        )
+        # Triage only inside the actual disaster/outage window (previously ANY
+        # active disaster forced all 24h into triage, draining the battery all
+        # night before a noon cyclone even arrived).
+        _in_window = (is_disaster_active and disaster_type not in ("none", None, "")
+                      and d_start <= h <= d_end)
+        is_emergency_triage_hour = bool(is_outage or (h in disaster_persistent_hours) or _in_window)
 
         if is_emergency_triage_hour:
-            outage_battery_kw = battery_status.get("available_power_kw", 84.0)
+            # Full SoH-derated power offered every hour (demo mode: Tier-1 holds
+            # across the whole island window). Energy-rationing across hours was
+            # trialled and reverted per operator preference — remaining_kwh below
+            # is tracked for the runtime display only, not enforced on dispatch.
+            # Scooter buffer is separate (own batteries).
+            _main_power = float(battery_status.get("available_power_kw", 84.0) or 0.0)
+            outage_battery_kw = round(max(0.0, _main_power), 1)
             scooter_buffer_kw = hourly_driev_state.get("emergency_buffer_available_kw", 3.2)
             total_backup_kw = round(outage_battery_kw + scooter_buffer_kw, 1)
 
@@ -325,11 +622,13 @@ def execute_simulation(
                 reported_hazard="Campus SCADA Telemetry & Comms Hub active",
             ))
             
-            # Cyclone Shelter-in-Place Protection across ALL Residential Hostels (Hostel 1, 2, 7)
+            # Cyclone Shelter-in-Place Protection across ALL Residential Hostels (Hostel 1, 2, 7).
+            # Capped by each block's real deficit — own solar covers first, so a
+            # midday-surplus hostel needs no backup for shelter load.
             if is_disaster_active and disaster_type == "cyclone_severe_storm":
                 for b in blocks_state:
                     if "hostel" in b.name.lower() and b.load_kw > 0.0:
-                        hostel_shelter_kw = b.critical_kw
+                        hostel_shelter_kw = min(b.critical_kw, b.deficit_kw)
                         locations.append(LocationNeed(
                             name=f"{b.name} (Shelter-in-Place)",
                             tier=1,
@@ -344,17 +643,18 @@ def execute_simulation(
                     locations.append(LocationNeed(
                         name="Bansuri Guru Auditorium (Staff/Overflow Shelter)",
                         tier=1,
-                        deficit_kw=min(4.0, auditorium_block.critical_kw),
+                        deficit_kw=min(4.0, auditorium_block.critical_kw, auditorium_block.deficit_kw),
                         feeder_limit_kw=15.0,
                         need_score=0.90,
                         reported_hazard="Staff & Visitor Overflow Shelter active",
                     ))
 
-            # Monsoon Flooding: Tier-1 Basement Sump Pump Protection across ALL Residential Hostels (Hostel 1, 2, 7)
+            # Monsoon Flooding: Tier-1 Basement Sump Pump Protection across ALL Residential Hostels (Hostel 1, 2, 7).
+            # Capped by real deficit (own solar covers first).
             if is_disaster_active and disaster_type == "monsoon_waterlogging":
                 for b in blocks_state:
                     if "hostel" in b.name.lower() and b.load_kw > 0.0:
-                        sump_kw = min(6.0, b.critical_kw) if "hostel 7" in b.name.lower() else min(4.0, b.critical_kw)
+                        sump_kw = min(6.0, b.critical_kw, b.deficit_kw) if "hostel 7" in b.name.lower() else min(4.0, b.critical_kw, b.deficit_kw)
                         locations.append(LocationNeed(
                             name=f"{b.name} (Basement Sump Pump)",
                             tier=1,
@@ -387,7 +687,11 @@ def execute_simulation(
                 elif is_disaster_active and disaster_type == "heatwave_stress":
                     need = 0.75
 
-                # Adjust essential deficit if sump or shelter was already served in Tier 1
+                # Adjust essential deficit if sump or shelter was already served in Tier 1.
+                # Hard-capped by the block's real deficit: a solar-surplus block
+                # needs ZERO backup even for essential load (previously Tier-2
+                # was invented for surplus blocks, inflating triage dispatch
+                # beyond battery availability in sunny hours).
                 essential_deficit = b.critical_kw
                 if is_disaster_active and disaster_type == "monsoon_waterlogging" and "hostel" in b.name.lower():
                     sump_kw = min(6.0, b.critical_kw) if "hostel 7" in b.name.lower() else min(4.0, b.critical_kw)
@@ -397,6 +701,7 @@ def execute_simulation(
                         essential_deficit = 0.0  # Hostels fully served in Tier 1 Shelter-in-Place
                     elif "auditorium" in b.name.lower():
                         essential_deficit = max(0.0, b.critical_kw - 4.0)
+                essential_deficit = min(essential_deficit, b.deficit_kw)
 
                 if essential_deficit > 0.0 and b.load_kw > 0.0:
                     locations.append(LocationNeed(
@@ -427,25 +732,56 @@ def execute_simulation(
                 need_score=0.1,
             ))
 
+            # No cross-hour energy reservation (reverted): full backup offered each
+            # hour so Tier-1 holds across the whole island window (demo mode).
+            battery_reserved_kwh = 0.0
             triage = triage_allocate(locations, battery_available_kw=total_backup_kw)
 
-            block_alloc = {}
-            for b in blocks_state:
-                alloc_for_block = sum(
-                    alloc for loc_name, alloc in triage.allocation_kw.items()
-                    if loc_name.startswith(b.name) or b.name in loc_name
-                )
-                block_alloc[b.name] = round(alloc_for_block, 2)
+            # Aggregate triage locations back to buildings by LONGEST prefix match
+            # (previously `startswith or in` could double-count across similar
+            # names, e.g. Hostel 1 vs Hostel 7 substrings).
+            _sorted_blocks = sorted([b.name for b in blocks_state], key=len, reverse=True)
+            block_alloc = {b.name: 0.0 for b in blocks_state}
+            for loc_name, alloc in triage.allocation_kw.items():
+                matched = None
+                for bn in _sorted_blocks:
+                    if loc_name == bn or loc_name.startswith(bn + " ") or loc_name.startswith(bn + " ("):
+                        matched = bn
+                        break
+                if matched is None:
+                    # Non-building locations (Medical Point, Server Room, driEV Bay)
+                    # are intentionally NOT attributed to a single block.
+                    continue
+                block_alloc[matched] = round(block_alloc[matched] + alloc, 2)
 
-            # In Heatwave mode, dispatch maximum available battery output (up to 84.0 kW) for active peak-shaving
+            # In Heatwave mode, dispatch maximum available battery output for peak-shaving.
+            # Recompute tier flags so they don't go stale (previously overwritten
+            # alloc but left tier_fully_served from triage).
             if is_disaster_active and disaster_type == "heatwave_stress" and not is_outage:
-                peak_shave_avail = min(84.0, total_backup_kw)
+                peak_shave_avail = min(float(battery_status.get("available_power_kw", 84.0)), total_backup_kw)
                 total_active_deficit = sum(b.deficit_kw for b in blocks_state if b.load_kw > 0)
                 if total_active_deficit > 0:
                     for b in blocks_state:
                         if b.load_kw > 0 and b.deficit_kw > 0:
                             block_alloc[b.name] = round((b.deficit_kw / total_active_deficit) * peak_shave_avail, 2)
+                        else:
+                            block_alloc[b.name] = 0.0
                     triage.battery_used_kw = round(sum(block_alloc.values()), 2)
+                    # Peak-shave is proportional, not tier-guaranteed: mark honestly.
+                    triage.tier_fully_served = {1: True, 2: False, 3: False, 4: False}
+                    triage.narrative += (
+                        f" Heatwave peak-shaving: {peak_shave_avail:.1f} kW spread proportionally "
+                        f"across {sum(1 for b in blocks_state if b.deficit_kw > 0)} deficit blocks."
+                    )
+
+            # Life-safety energy: triage serves Tier-1 first, so when the flag is
+            # True the slice demand was fully met; else everything dispatched
+            # that hour went to (partial) Tier-1.
+            if is_outage:
+                _t1d = round(sum(l.deficit_kw for l in locations if l.tier == 1), 2)
+                tier1_demand_island_kwh += _t1d
+                _t1flag = bool(triage.tier_fully_served.get(1, triage.tier_fully_served.get("1", False)))
+                tier1_served_island_kwh += _t1d if _t1flag else min(_t1d, float(triage.battery_used_kw or 0.0))
 
             total_demand_this_hour = sum(b.load_kw for b in blocks_state)
             total_solar_this_hour = sum(b.solar_kw for b in blocks_state)
@@ -453,38 +789,58 @@ def execute_simulation(
             grid_import_this_hour = 0.0 if is_outage else max(0.0, round(total_demand_this_hour - total_solar_this_hour - battery_used_this_hour, 2))
             total_optimized_cost_inr += grid_import_this_hour * hourly_tariff
 
-            # Backup runtime estimate in hours
+            # Backup runtime from TRACKED remaining energy (previously full
+            # usable_kwh every hour, implying infinite energy).
             total_critical_draw = sum(loc.deficit_kw for loc in locations if loc.tier in (1, 2))
-            backup_runtime_hours = round(usable_battery_kwh / max(0.5, total_critical_draw), 1)
-            backup_runtime_text = f"Battery can sustain Tier-1/2 critical loads for ~{backup_runtime_hours} more hours at current draw ({usable_battery_kwh:.0f} kWh remaining)"
+            backup_runtime_hours = round(max(0.0, battery_remaining_kwh) / max(0.5, total_critical_draw), 1)
+            backup_runtime_text = (
+                f"Battery can sustain Tier-1/2 critical loads for ~{backup_runtime_hours} more hours "
+                f"at current draw ({max(0.0, battery_remaining_kwh):.0f} kWh remaining of "
+                f"{usable_battery_kwh_full:.0f} kWh usable)"
+            )
 
-            # Isolated Building Power Redirection
+            # Isolated Building Power Redirection — computed from actual isolated
+            # load that was removed (previously hardcoded 18.4 kW).
             isolated_redirect_kw = 0.0
             power_redirect_narrative = ""
             if is_disaster_active and disaster_type == "electrical_fire":
-                isolated_redirect_kw = 18.4
-                power_redirect_narrative = f"+{isolated_redirect_kw} kW redirected from fire-isolated {isolated_block_name} to other deficit buildings (Hostel 7, Central Library)."
+                try:
+                    iso_load = sum(
+                        isolated_original_load.get(n, [0.0] * 24)[h]
+                        if n in isolated_original_load else 0.0
+                        for n in load_curves
+                    )
+                    # Redirect = min(isolated load freed, battery actually dispatched).
+                    isolated_redirect_kw = round(min(iso_load, float(triage.battery_used_kw)), 1)
+                except Exception:
+                    isolated_redirect_kw = 0.0
+                if isolated_redirect_kw > 0.01:
+                    power_redirect_narrative = (
+                        f"+{isolated_redirect_kw} kW redirected from fire-isolated "
+                        f"{isolated_block_name} to other deficit buildings."
+                    )
 
             full_explanation = triage.narrative
             if power_redirect_narrative:
                 full_explanation = f"{power_redirect_narrative} {full_explanation}"
 
+            _peak_avail_txt = f"{float(battery_status.get('available_power_kw', 84.0)):.1f}"
             disaster_details_obj = {
                 "type": disaster_type,
                 "active": is_disaster_active,
                 "trigger_description": (
                     f"Heavy torrential monsoon downpour and water table surge (Hours {d_start}–{d_end}). Groundwater pumps active across Hostels 1, 2, and 7." if disaster_type == "monsoon_waterlogging" else
                     (f"Pre-emptive 11kV utility grid disconnect due to 120 km/h squall winds (Hours {d_start}–{d_end}). Hostel blocks (1, 2, 7) prioritized for in-place student shelter." if disaster_type == "cyclone_severe_storm" else
-                    (f"Electrical fire detected in {isolated_block_name}. Main electrical riser isolated (0 kW) during safety clearance (Hours {d_start}–{d_end}) with +18.4 kW clean power redirected." if disaster_type == "electrical_fire" else
+                    (f"Electrical fire detected in {isolated_block_name}. Main electrical riser isolated (0 kW) during safety clearance (Hours {d_start}–{d_end}) with +{isolated_redirect_kw:.1f} kW clean power redirected." if disaster_type == "electrical_fire" else
                     (f"Catastrophic 11kV/415V substation transformer failure. Islanded microgrid mode active during emergency repair window (Hours {d_start}–{d_end}). Solar generation unaffected." if disaster_type in ("grid_transformer_fault", "extended_outage") else
-                    (f"Ambient temperature 44°C causing +35% campus AC chiller demand surge (Hours {d_start}–{d_end}). Grid connected; battery engaged in 84 kW peak-shaving." if disaster_type == "heatwave_stress" else "Routine operations."))))
+                    (f"Ambient temperature 44°C causing +35% campus AC chiller demand surge (Hours {d_start}–{d_end}). Grid connected; battery engaged in {_peak_avail_txt} kW peak-shaving." if disaster_type == "heatwave_stress" else "Routine operations."))))
                 ),
                 "hotspot_building": (
                     "ITER Hostels 1, 2 & 7 (Basement Drainage Pumps, Need Score: 0.98)" if disaster_type == "monsoon_waterlogging" else
                     ("Hostel blocks (1, 2, 7) — students sheltering in place per advance cyclone warning" if disaster_type == "cyclone_severe_storm" else
                     (f"{isolated_block_name} (Fire Isolated, 0 kW Load)" if disaster_type == "electrical_fire" else
                     ("Campus Server & Medical Point (Islanded Microgrid Emergency Defense)" if disaster_type in ("grid_transformer_fault", "extended_outage") else
-                    ("All Hostels & Academic Blocks (+35% Thermal AC Surge, 84 kW Battery Shave)" if disaster_type == "heatwave_stress" else "None"))))
+                    (f"All Hostels & Academic Blocks (+35% Thermal AC Surge, {_peak_avail_txt} kW Battery Shave)" if disaster_type == "heatwave_stress" else "None"))))
                 ),
                 "solar_impact_text": (
                     "-70% (Monsoon Overcast)" if disaster_type == "monsoon_waterlogging" else
@@ -533,10 +889,15 @@ def execute_simulation(
                 "rejected_kw": triage.rejected_kw,
                 "backup_runtime_hours": backup_runtime_hours,
                 "backup_runtime_text": backup_runtime_text,
+                "battery_reserved_kwh": round(battery_reserved_kwh, 1),
                 "isolated_power_redirect_kw": isolated_redirect_kw,
                 "critical_infra_allocation": {
-                    "Campus Server/Comms Room": triage.allocation_kw.get("Campus Server/Comms Room", 0.0),
-                    "Campus Medical Point": triage.allocation_kw.get("Campus Medical Point", 0.0),
+                    # Full triage keys (previously looked up short names that never
+                    # exist, so always 0.0).
+                    "Campus Server/Comms Room": triage.allocation_kw.get(
+                        "Centre for Data Science (Campus Server/Comms Room)", 0.0),
+                    "Campus Medical Point": triage.allocation_kw.get(
+                        "ITER Administrative Block (Campus Medical Point)", 0.0),
                 },
                 "driev_emergency_buffer_used_kw": round(min(scooter_buffer_kw, battery_used_this_hour), 2) if is_outage else 0.0,
                 "driev_solar_surplus_redirected_kw": 0.0,
@@ -565,28 +926,61 @@ def execute_simulation(
                     for b in blocks_state
                 ],
             }
-            record["alerts"] = generate_alerts(
-                hour=h,
-                is_outage=is_outage,
-                is_disaster_active=is_disaster_active,
-                disaster_type=disaster_type if is_disaster_active else "none",
-                battery_used_kw=battery_used_this_hour,
-                battery_available_kw=total_backup_kw,
-                rejected_kw=triage.rejected_kw,
-                tier_fully_served=triage.tier_fully_served,
-                blocks=record["blocks"],
-                disaster_details=disaster_details_obj,
-                backup_runtime_hours=backup_runtime_hours,
-                isolated_power_redirect_kw=isolated_redirect_kw,
-                isolated_building=isolated_block_name,
-            )
+            if enable_live_llm:
+                record["alerts"] = generate_alerts(
+                    hour=h,
+                    is_outage=is_outage,
+                    is_disaster_active=is_disaster_active,
+                    disaster_type=disaster_type if is_disaster_active else "none",
+                    battery_used_kw=battery_used_this_hour,
+                    battery_available_kw=total_backup_kw,
+                    rejected_kw=triage.rejected_kw,
+                    tier_fully_served=triage.tier_fully_served,
+                    blocks=record["blocks"],
+                    disaster_details=disaster_details_obj,
+                    backup_runtime_hours=backup_runtime_hours,
+                    isolated_power_redirect_kw=isolated_redirect_kw,
+                    isolated_building=isolated_block_name,
+                )
+            else:
+                # Offline batch path: 0 external calls (fixes 48-call timeout).
+                record["alerts"] = _offline_generate_alerts(
+                    hour=h,
+                    is_outage=is_outage,
+                    is_disaster_active=is_disaster_active,
+                    disaster_type=disaster_type if is_disaster_active else "none",
+                    battery_used_kw=battery_used_this_hour,
+                    battery_available_kw=total_backup_kw,
+                    rejected_kw=triage.rejected_kw,
+                    tier_fully_served=triage.tier_fully_served,
+                    blocks=record["blocks"],
+                    disaster_details=disaster_details_obj,
+                    backup_runtime_hours=backup_runtime_hours,
+                    isolated_power_redirect_kw=isolated_redirect_kw,
+                    isolated_building=isolated_block_name,
+                )
         else:
-            # Normal Operation: Routine Max-Min Fairness LP
-            battery_available = min(BATTERY_RATED_POWER_KW, battery_status["available_power_kw"])
+            # Normal Operation: Routine Max-Min Fairness LP (full SoH power each
+            # hour; remaining_kwh is display-only, not enforced — see above).
+            battery_available = min(BATTERY_RATED_POWER_KW,
+                                    float(battery_status.get("available_power_kw", 0.0) or 0.0))
+            battery_reserved_kwh = 0.0
             result = allocate(blocks_state, battery_available_kw=battery_available)
-            explanation = explain(result, blocks_state, hour=h)
+            explanation = explain(result, blocks_state, hour=h) if enable_live_llm else _offline_explain(result, blocks_state, hour=h)
 
-            driev_delivered = redirect_solar_surplus_to_driev(driev_fleet, surplus_kw=solar_surplus) if solar_surplus > 0.05 else {}
+            # Stateful: surplus charges THIS hour's fleet (SOC carries forward).
+            _hour_fleet = _fleet_for_hour(hourly_driev_state)
+            driev_delivered = redirect_solar_surplus_to_driev(_hour_fleet, surplus_kw=solar_surplus) if solar_surplus > 0.05 else {}
+            if driev_delivered:
+                _commit_fleet(_hour_fleet)
+                # Refresh displayed SOC to post-charge values (no more drift
+                # between shown state and mutated fleet).
+                for _sd in hourly_driev_state.get("scooters", []):
+                    if _sd["id"] in driev_delivered and driev_delivered[_sd["id"]] > 0:
+                        _match = next((s for s in _hour_fleet if s.id == _sd["id"]), None)
+                        if _match is not None:
+                            _sd["soc_pct"] = _match.soc_pct
+                            _sd["range_km"] = _match.range_km
 
             total_demand_this_hour = sum(b.load_kw for b in blocks_state)
             total_solar_this_hour = sum(b.solar_kw for b in blocks_state)
@@ -601,16 +995,25 @@ def execute_simulation(
                 "is_disaster_active": False,
                 "mode": "FAIRNESS",
                 "disaster_type": "none",
+                # Unified schema: fairness hours now carry the same keys as
+                # triage hours (previously omitted, forcing frontend branching).
+                "disaster_details": None,
                 "tou_tariff_inr_per_kwh": hourly_tariff,
                 "tariff_window": "PEAK (₹8.50)" if hourly_tariff == 8.50 else ("NORMAL (₹6.80)" if hourly_tariff == 6.80 else "OFF-PEAK (₹4.50)"),
                 "battery_available_kw": battery_available,
                 "battery_used_kw": battery_used_this_hour,
                 "fairness_ratio": result.fairness_ratio,
                 "infeasible": result.infeasible,
+                "infeasible_reason": result.infeasible_reason,
                 "rejected_kw": result.rejected_kw,
                 "backup_runtime_hours": None,
                 "backup_runtime_text": None,
+                "battery_reserved_kwh": round(battery_reserved_kwh, 1),
                 "isolated_power_redirect_kw": 0.0,
+                "critical_infra_allocation": {"Campus Server/Comms Room": 0.0, "Campus Medical Point": 0.0},
+                "driev_emergency_buffer_used_kw": 0.0,
+                "tier_fully_served": {},
+                "priority_order": [],
                 "driev_solar_surplus_redirected_kw": round(sum(driev_delivered.values()), 2),
                 "explanation": explanation,
                 "driev_fleet": hourly_driev_state,
@@ -635,27 +1038,48 @@ def execute_simulation(
                     for b in blocks_state
                 ],
             }
-            record["alerts"] = generate_alerts(
-                hour=h,
-                is_outage=False,
-                is_disaster_active=False,
-                disaster_type="none",
-                battery_used_kw=battery_used_this_hour,
-                battery_available_kw=battery_available,
-                rejected_kw=result.rejected_kw,
-                tier_fully_served=None,
-                blocks=record["blocks"],
-                fairness_ratio=result.fairness_ratio,
-            )
+            _alert_kw = dict(hour=h, is_outage=False, is_disaster_active=False,
+                             disaster_type="none", battery_used_kw=battery_used_this_hour,
+                             battery_available_kw=battery_available, rejected_kw=result.rejected_kw,
+                             tier_fully_served=None, blocks=record["blocks"],
+                             fairness_ratio=result.fairness_ratio)
+            record["alerts"] = generate_alerts(**_alert_kw) if enable_live_llm else _offline_generate_alerts(**_alert_kw)
 
         total_solar_generated_kwh += record["energy_mix"]["solar_kw"]
         total_battery_dispatched_kwh += record["energy_mix"]["battery_kw"]
         total_grid_imported_kwh += record["energy_mix"]["grid_import_kw"]
+        total_demand_kwh_day += record["energy_mix"]["total_demand_kw"]
         hourly_results.append(record)
 
+        # SoC display tracker (not enforced on dispatch): only the MAIN BESS
+        # drains `remaining` (scooter buffer has its own batteries). Solar
+        # surplus recharges in BOTH outage and grid-connected hours. Dispatch
+        # always offers full power (demo mode), so this only feeds the runtime
+        # text and the remaining_kwh display field.
+        try:
+            _used_total = float(record["energy_mix"]["battery_kw"] or 0.0)
+            if record.get("mode") == "DISASTER_TRIAGE":
+                # Main BESS covers used minus scooter-buffer share.
+                _scoot_cap = float(hourly_driev_state.get("emergency_buffer_available_kw", 0.0) or 0.0)
+                _scoot_used = min(_scoot_cap, _used_total)
+                _main_used = max(0.0, _used_total - _scoot_used)
+            else:
+                _main_used = _used_total
+            _driev_used = float(record.get("driev_solar_surplus_redirected_kw", 0.0) or 0.0)
+            _surplus_charge = max(0.0, float(solar_surplus) - _driev_used) * 0.9
+            battery_remaining_kwh = max(
+                0.0, min(usable_battery_kwh_full,
+                         battery_remaining_kwh - _main_used + _surplus_charge))
+            record["battery_remaining_kwh"] = round(battery_remaining_kwh, 1)
+            record["battery_main_used_kw"] = round(_main_used, 2)
+        except Exception:
+            pass
+
     # 5. Summary Metrics & Financial Optimization Value Delta
-    total_clean_energy_supplied = total_solar_generated_kwh + total_battery_dispatched_kwh
-    grid_avoided_kwh = round(total_clean_energy_supplied, 1)
+    # grid_avoided = demand served WITHOUT grid (demand - grid import).
+    # Previously solar+battery (double-counts when solar surplus exceeds demand
+    # and assumes battery energy is always clean without tracking charge source).
+    grid_avoided_kwh = round(max(0.0, total_demand_kwh_day - total_grid_imported_kwh), 1)
     co2_avoided_kg = round(grid_avoided_kwh * GRID_CO2_KG_PER_KWH, 1)
 
     # Baseline comparison
@@ -714,7 +1138,10 @@ def execute_simulation(
     s24_critical_unmet_total = 0.0
     s24_jain_sum = 0.0
 
-    total_critical_demand_day = sum(sum(b["critical_kw"] for b in h["blocks"] if b["load_kw"] > 0) for h in hourly_results)
+    # Tier-1 % measured over ISLANDED hours only (grid-connected hours can't
+    # starve — grid covers). Both runs use the same denominator.
+    total_critical_demand_day = sum(sum(b["critical_kw"] for b in h["blocks"] if b["load_kw"] > 0)
+                                    for h in hourly_results if h.get("is_outage"))
 
     for h_idx in range(24):
         h_rec = hourly_results[h_idx]
@@ -730,11 +1157,13 @@ def execute_simulation(
         ]
         bat_avail = h_rec["battery_available_kw"]
         
-        # Run A: Campus-wide uncoordinated baseline metrics
+        # Run A: Campus-wide uncoordinated baseline metrics (Tier-1 unmet only
+        # on islanded hours, matching Run B).
         run_a_all = allocate_uncoordinated_baseline(b_states, bat_avail)
         baseline_energy_served_total += run_a_all["total_served_kw"]
         baseline_unmet_total += run_a_all["unmet_demand_kw"]
-        baseline_critical_unmet_total += run_a_all["critical_unmet_kw"]
+        if h_rec.get("is_outage"):
+            baseline_critical_unmet_total += run_a_all["critical_unmet_kw"]
         baseline_battery_dispatched_kwh += sum(run_a_all["allocations"].values())
         
         # Run A: Fairness on microgrid participants
@@ -742,11 +1171,20 @@ def execute_simulation(
         run_a_pilot = allocate_uncoordinated_baseline(pilot_states, bat_avail)
         baseline_jain_sum += run_a_pilot["fairness_index"]
         
-        # Run B: S24 Orchestrated Microgrid
+        # Run B: S24 Orchestrated Microgrid (+ real critical-unmet tracking;
+        # previously s24_critical_unmet_total stayed 0, forcing 100%/99.9%).
+        # Grid-connected hours can't starve Tier-1 (grid covers any battery
+        # shortfall), so only islanded hours count toward Tier-1 unmet.
         s24_served = sum(b["solar_kw"] + b["allocated_kw"] for b in h_rec["blocks"])
         s24_demand = sum(b["load_kw"] for b in h_rec["blocks"])
         s24_energy_served_total += s24_served
         s24_unmet_total += max(0.0, s24_demand - s24_served)
+        if h_rec.get("is_outage"):
+            for b in h_rec["blocks"]:
+                _served_b = float(b.get("solar_kw", 0) or 0) + float(b.get("allocated_kw", 0) or 0)
+                _crit = float(b.get("critical_kw", 0) or 0)
+                if _served_b + 1e-9 < _crit:
+                    s24_critical_unmet_total += (_crit - _served_b)
         
         # S24 Jain fairness over the community microgrid deficit blocks
         if h_rec["is_outage"]:
@@ -763,24 +1201,48 @@ def execute_simulation(
         else:
             s24_jain_sum += 1.0
     
+    # Tier-1 (life-safety slices) served % over ISLANDED hours (previously B
+    # hardcoded 99.9%, then briefly block-critical which mixes Tier-2 in).
+    # s24_critical_unmet_total is RETIRED as audit denominator (kept computed
+    # for reference) — audit now uses the slice accounting below.
+    if tier1_demand_island_kwh > 0.01:
+        s24_critical_served_pct = round(
+            max(0.0, tier1_served_island_kwh / tier1_demand_island_kwh * 100.0), 1)
+        s24_critical_unmet_total = round(tier1_demand_island_kwh - tier1_served_island_kwh, 1)
+    else:
+        # No islanded hours → Tier-1 trivially 100% (grid covers all).
+        s24_critical_served_pct = 100.0
+        s24_critical_unmet_total = 0.0
+    # Honest baseline CO2: same demand-minus-grid method as main metrics
+    # (previously solar+battery double-count).
+    _baseline_grid_avoided = max(0.0, sum(
+        sum(b.load_kw for b in [
+            BlockState(name=x["name"], load_kw=x["load_kw"], solar_kw=x["solar_kw"],
+                       critical_kw=x["critical_kw"], feeder_limit_kw=150.0)
+            for x in h["blocks"]]) for h in hourly_results) - total_uncoordinated_grid_import_kwh)
     scenario_comparison = {
         "run_a_baseline": {
             "title": "Run A: Uncoordinated Baseline (Without SynapTwin)",
-            "methodology": "Equal naive battery split & isolated rooftop solar (no inter-building sharing)",
+            "methodology": ("Owns the same battery but splits it naively, equal parts, no sharing smarts. "
+                            "Tier-1 % = block-critical kWh served on islanded hours. "
+                            "Note: the financial headline elsewhere compares against GRID-ONLY "
+                            "(no shared battery at all) — that is the investment case; this Run-A "
+                            "row isolates the orchestration edge."),
             "total_energy_served_kwh": round(baseline_energy_served_total, 1),
             "unmet_demand_kwh": round(baseline_unmet_total, 1),
             "tier1_life_safety_served_pct": round(max(0.0, 100.0 - (baseline_critical_unmet_total / max(1.0, total_critical_demand_day)) * 100.0), 1),
-            "grid_import_kwh": round(total_uncoordinated_grid_import_kwh, 1),
+            "grid_import_kwh": round(total_naive_grid_import_kwh, 1),
             "daily_tou_cost_inr": round(total_baseline_cost_inr, 0),
-            "co2_avoided_kg": round((total_solar_generated_kwh + baseline_battery_dispatched_kwh) * GRID_CO2_KG_PER_KWH, 1),
+            "co2_avoided_kg": round(_baseline_grid_avoided * GRID_CO2_KG_PER_KWH, 1),
             "fairness_index": round(baseline_jain_sum / 24.0, 3),
         },
         "run_b_s24": {
             "title": "Run B: SynapTwin Orchestrated Microgrid (With SynapTwin)",
-            "methodology": "Two-Stage Max-Min Fairness LP & 4-Tier Lexicographic Disaster Triage",
+            "methodology": ("Two-Stage Max-Min Fairness LP & 4-Tier Lexicographic Disaster Triage. "
+                            "Tier-1 % = life-safety slice kWh (medical/server/sump/shelter) served on islanded hours."),
             "total_energy_served_kwh": round(s24_energy_served_total, 1),
             "unmet_demand_kwh": round(s24_unmet_total, 1),
-            "tier1_life_safety_served_pct": 99.9,
+            "tier1_life_safety_served_pct": s24_critical_served_pct,
             "grid_import_kwh": round(total_grid_imported_kwh, 1),
             "daily_tou_cost_inr": round(total_optimized_cost_inr, 0),
             "co2_avoided_kg": round(co2_avoided_kg, 1),
@@ -796,7 +1258,10 @@ def execute_simulation(
         }
     }
 
-    # Demand Forecast Line: Genuine trend-based forecast with realistic lag at inflection points & exact 3.8% MAPE
+    # Demand Forecast Line: illustrative persistence-lag model (multipliers shape
+    # realistic lag at ramps/dips). MAPE is COMPUTED below from actual vs
+    # predicted — never claimed as an exact constant (previously commented as
+    # "exact 3.8%", backwards: multipliers are input, MAPE is output).
     # Multipliers reflect:
     # - Morning ramp lag (06:00-09:00): Under-prediction during steep rise (forecast hasn't seen the sudden spike yet)
     # - Lunch dip & recovery (13:00-14:00): Over-prediction at 13:00 (extrapolating midday) & lag at 14:00 (recovery)
@@ -912,9 +1377,22 @@ def execute_simulation(
             "clean_energy_delivered_kwh": kwh_saved_by_optimization,
         },
         "audit_ledger": {
-            "certificate_id": f"SOA-ITER-SYNAPTWIN-{abs(hash(ledger_content)) % 10000000:07d}",
+            # Deterministic ID from SHA-256 (previously Python hash() which is
+            # randomised per process, so IDs changed on every restart).
+            "certificate_id": f"SOA-ITER-SYNAPTWIN-{audit_ledger_hash[:7].upper()}",
             "sha256_hash": audit_ledger_hash,
-            "verification_status": "VERIFIED_OPTIMAL (100% Starvation-Free)",
+            # Honest status computed from ACTUAL results (previously hardcoded
+            # VERIFIED_OPTIMAL even when rejected_kw > 0 and Tier-4 starved).
+            "verification_status": (
+                "VERIFIED_OPTIMAL (100% Starvation-Free)"
+                if s24_unmet_total <= 0.01 and s24_critical_unmet_total <= 0.01
+                else ("CONDITIONAL — Tier-1 protected, Tier-3/4 curtailed "
+                      f"({s24_unmet_total:.1f} kWh unmet)") if s24_critical_unmet_total <= 0.01
+                else (f"CONSTRAINED — Tier-1 shortfall {s24_critical_unmet_total:.1f} kWh, "
+                      f"grid backup required")
+            ),
+            "total_unmet_kwh_day": round(s24_unmet_total, 1),
+            "tier1_unmet_kwh_day": round(s24_critical_unmet_total, 1),
             "compliance_standards": [
                 "Designed with reference to IEEE 2030.7 microgrid controller specification principles",
                 "TPCODL Commercial Time-of-Use (ToU) Tariff Schedule (OERC Tariff Order Schedule RST-2)",
@@ -957,7 +1435,14 @@ def execute_simulation(
             "is_active": bool(is_disaster_active and disaster_type == "cyclone_severe_storm"),
         },
         "simulated_alert_disclaimer": SIMULATED_ALERT_DISCLAIMER,
+        # Top-level alerts = hazard-hour slice PLUS explicit context (previously a
+        # bare list — a fairness-hour hazard looked like the scenario alert).
         "alerts": hourly_results[hazard_hour if (hazard_hour is not None and 0 <= hazard_hour < 24) else 12].get("alerts", []),
+        "alerts_context": {
+            "hazard_hour": hazard_hour,
+            "hazard_hour_mode": hourly_results[hazard_hour if (hazard_hour is not None and 0 <= hazard_hour < 24) else 12].get("mode"),
+            "hazard_hour_is_outage": hourly_results[hazard_hour if (hazard_hour is not None and 0 <= hazard_hour < 24) else 12].get("is_outage"),
+        },
         "hourly": hourly_results,
     }
 
@@ -966,8 +1451,47 @@ def execute_simulation(
 # REST API ENDPOINTS
 # ==========================================
 
+@app.route("/api/health", methods=["GET"])
+def get_health():
+    """Lightweight health probe for Render/gunicorn (no simulation)."""
+    return jsonify({"status": "ok", "service": "synaptwin-backend"}), 200
+
+
+@app.errorhandler(404)
+def _json_404(e):
+    # JSON 404 for any /api/* miss including POST (previously POST unknown
+    # returned HTML via SPA catch-all).
+    try:
+        if (request.path or "").lower().split("/")[1:2] == ["api"]:
+            return jsonify({"error": "API endpoint not found", "path": request.path}), 404
+    except Exception:
+        pass
+    return e
+
+
+@app.errorhandler(405)
+def _json_405(e):
+    # JSON 405 for wrong-method /api/* hits (e.g. POST unknown returns 405
+    # before 404 routing). Keeps error schema consistent.
+    try:
+        if (request.path or "").lower().split("/")[1:2] == ["api"]:
+            return jsonify({"error": "Method not allowed for this API endpoint",
+                            "path": request.path, "method": request.method}), 405
+    except Exception:
+        pass
+    return e
+
+
 @app.route("/api/status", methods=["GET"])
 def get_status():
+    gemini = {"configured": False, "mode": "offline_deterministic"}
+    fernet = {"configured": False}
+    try:
+        if app_config is not None:
+            gemini = app_config.gemini_status()
+            fernet = app_config.fernet_status()
+    except Exception:
+        pass
     return jsonify({
         "status": "online",
         "service": "SynapTwin Community Energy Flexibility Digital Twin",
@@ -975,6 +1499,8 @@ def get_status():
         "location": {"lat": 20.30, "lon": 85.82, "city": "Bhubaneswar, Odisha, India"},
         "weather_source": "Open-Meteo Solar API",
         "fleet_system": "driEV Campus Shared Scooters (Speed & Luxe)",
+        "ai_explainability": gemini,
+        "privacy_vault": fernet,
         "features": [
             "Real OpenStreetMap 16-Building Campus Geometry",
             "Open-Meteo Solar Irradiance Live Integration",
@@ -993,7 +1519,10 @@ def get_status():
 
 @app.route("/api/campus/geojson", methods=["GET"])
 def get_campus_geojson():
-    buildings = load_campus_buildings()
+    try:
+        buildings = load_campus_buildings()
+    except (FileNotFoundError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 500
     geojson = to_geojson(buildings)
     return jsonify(geojson)
 
@@ -1010,54 +1539,105 @@ def get_default_simulation():
     return jsonify(sim)
 
 
-@app.route("/api/simulation/run", methods=["POST"])
+@app.route("/api/simulation/run", methods=["GET", "POST"])
 def run_custom_simulation():
-    data = request.get_json() or {}
-    outage_hours = data.get("outage_hours", [19, 20, 21])
-    disaster_type = data.get("disaster_type", "monsoon_waterlogging")
-    is_disaster_active = bool(data.get("is_disaster_active", True) and (disaster_type not in (None, "none", "")))
-    isolated_block = data.get("isolated_block") or data.get("isolated_building")
-    hazard_hour = data.get("hazard_hour", 20)
-    battery_soh_pct = data.get("battery_soh_pct")
-    days_in_service = int(data.get("days_in_service", 200))
-    driev_emergency_opt_in_count = int(data.get("driev_emergency_opt_in_count", 8))
-    solar_multiplier = float(data.get("solar_multiplier", 1.0))
-    load_multiplier = float(data.get("load_multiplier", 1.0))
-    block_load_overrides = data.get("block_load_overrides")
-    day_name = data.get("day_name", "Mon")
-    day_type = data.get("day_type", "weekday")
-
-    disaster_start_hour = data.get("disaster_start_hour")
-    if disaster_start_hour is None:
-        disaster_start_hour = data.get("cyclone_start_hour")
+    # Unified HTTP surface (§5.5): GET+POST like /compare and /alerts (GET uses
+    # query params). POST with JSON remains the primary frontend path.
+    if request.method == "GET":
+        data = request.args.to_dict()
     else:
-        disaster_start_hour = int(disaster_start_hour)
-        
-    disaster_end_hour = data.get("disaster_end_hour")
-    if disaster_end_hour is None:
-        disaster_end_hour = data.get("cyclone_end_hour")
-    else:
-        disaster_end_hour = int(disaster_end_hour)
+        data = request.get_json(silent=True)
+        if data is None:
+            # Allow POST with query params and empty body (sandbox parity).
+            data = request.args.to_dict() if request.args else None
+        if data is None:
+            return jsonify({"error": "Invalid JSON body"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
+    try:
+        outage_hours = _parse_outage_hours(data.get("outage_hours", [19, 20, 21]))
+        disaster_type = str(data.get("disaster_type", "monsoon_waterlogging") or "none")
+        allowed_disasters = {"none", "monsoon_waterlogging", "cyclone_severe_storm",
+                             "electrical_fire", "grid_transformer_fault", "extended_outage",
+                             "heatwave_stress"}
+        if disaster_type not in allowed_disasters:
+            return jsonify({"error": f"Unknown disaster_type '{disaster_type}'",
+                            "allowed": sorted(allowed_disasters)}), 400
+        is_disaster_active = bool(data.get("is_disaster_active", True) and disaster_type != "none")
+        isolated_block = data.get("isolated_block") or data.get("isolated_building")
+        hazard_hour = _safe_int(data.get("hazard_hour", 20), 20, 0, 23)
+        _soh_raw = data.get("battery_soh_pct", None)
+        battery_soh_pct = None if _soh_raw in (None, "") else _safe_float(_soh_raw, 82.0, 0.0, 100.0)
+        days_in_service = _safe_int(data.get("days_in_service", 200), 200, 0, 3000)
+        driev_emergency_opt_in_count = _safe_int(data.get("driev_emergency_opt_in_count", 8), 8, 0, 12)
+        solar_multiplier = _safe_float(data.get("solar_multiplier", 1.0), 1.0, 0.0, 3.0)
+        load_multiplier = _safe_float(data.get("load_multiplier", 1.0), 1.0, 0.0, 3.0)
+        block_load_overrides = data.get("block_load_overrides")
+        if block_load_overrides is not None and not isinstance(block_load_overrides, dict):
+            return jsonify({"error": "block_load_overrides must be an object {block_name: kW}"}), 400
+        day_name = str(data.get("day_name", "Mon") or "Mon")[:3]
+        day_type = str(data.get("day_type", "weekday") or "weekday")
+        if day_type not in ("weekday", "weekend"):
+            day_type = "weekday"
 
-    results = execute_simulation(
-        outage_hours=outage_hours,
-        disaster_type=disaster_type,
-        is_disaster_active=is_disaster_active,
-        isolated_block=isolated_block,
-        hazard_hour=hazard_hour,
-        battery_soh_pct=battery_soh_pct,
-        days_in_service=days_in_service,
-        driev_emergency_opt_in_count=driev_emergency_opt_in_count,
-        solar_multiplier=solar_multiplier,
-        load_multiplier=load_multiplier,
-        block_load_overrides=block_load_overrides,
-        day_name=day_name,
-        day_type=day_type,
-        disaster_start_hour=disaster_start_hour,
-        disaster_end_hour=disaster_end_hour,
-        cyclone_start_hour=disaster_start_hour,
-        cyclone_end_hour=disaster_end_hour,
-    )
+        def _opt_hour(*keys):
+            for k in keys:
+                if data.get(k) is not None:
+                    try:
+                        return _safe_int(data.get(k), None, 0, 23)  # type: ignore
+                    except Exception:
+                        return None
+            return None
+        disaster_start_hour = _opt_hour("disaster_start_hour", "cyclone_start_hour")
+        disaster_end_hour = _opt_hour("disaster_end_hour", "cyclone_end_hour")
+    except Exception as exc:
+        log.warning("simulation/run bad params: %s", exc)
+        return jsonify({"error": f"Invalid parameters: {exc}"}), 400
+
+    ok, err = _check_auth_and_rate("sim")
+    if not ok:
+        return err  # type: ignore
+    _cache_payload = {"op": "run", "outage_hours": outage_hours, "disaster_type": disaster_type,
+                      "is_disaster_active": is_disaster_active, "isolated_block": isolated_block,
+                      "hazard_hour": hazard_hour, "battery_soh_pct": battery_soh_pct,
+                      "days_in_service": days_in_service,
+                      "driev_emergency_opt_in_count": driev_emergency_opt_in_count,
+                      "solar_multiplier": solar_multiplier, "load_multiplier": load_multiplier,
+                      "block_load_overrides": block_load_overrides, "day_name": day_name,
+                      "day_type": day_type, "disaster_start_hour": disaster_start_hour,
+                      "disaster_end_hour": disaster_end_hour}
+    _ck = _sim_cache_key(_cache_payload)
+    if _ck and _ck in _SIM_CACHE:
+        _ts, _res = _SIM_CACHE[_ck]
+        if time.time() - _ts < _SIM_CACHE_TTL_SEC:
+            return jsonify(_res)
+    try:
+        results = execute_simulation(
+            outage_hours=outage_hours,
+            disaster_type=disaster_type,
+            is_disaster_active=is_disaster_active,
+            isolated_block=isolated_block,
+            hazard_hour=hazard_hour,
+            battery_soh_pct=battery_soh_pct,
+            days_in_service=days_in_service,
+            driev_emergency_opt_in_count=driev_emergency_opt_in_count,
+            solar_multiplier=solar_multiplier,
+            load_multiplier=load_multiplier,
+            block_load_overrides=block_load_overrides,
+            day_name=day_name,
+            day_type=day_type,
+            disaster_start_hour=disaster_start_hour,
+            disaster_end_hour=disaster_end_hour,
+            cyclone_start_hour=disaster_start_hour,
+            cyclone_end_hour=disaster_end_hour,
+        )
+    except Exception as exc:
+        log.exception("simulation/run failed")
+        return jsonify({"error": f"Simulation failed: {exc}"}), 500
+    if _ck:
+        _SIM_CACHE[_ck] = (time.time(), results)
+        if len(_SIM_CACHE) > 64:
+            _SIM_CACHE.pop(next(iter(_SIM_CACHE)))
     return jsonify(results)
 
 
@@ -1067,53 +1647,64 @@ def get_simulation_comparison():
         data = request.get_json(force=True, silent=True) or {}
     else:
         data = request.args.to_dict()
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid parameters"}), 400
 
-    outage_hours = data.get("outage_hours", [19, 20, 21])
-    if isinstance(outage_hours, str):
-        outage_hours = [int(h) for h in outage_hours.split(",") if h.strip()]
-    
-    disaster_type = data.get("disaster_type", "monsoon_waterlogging")
-    is_disaster_active = bool(data.get("is_disaster_active", True) and (disaster_type not in (None, "none", "")))
-    isolated_block = data.get("isolated_block")
-    hazard_hour = int(data.get("hazard_hour", 20))
-    battery_soh_pct = float(data["battery_soh_pct"]) if "battery_soh_pct" in data else None
-    days_in_service = int(data.get("days_in_service", 200))
-    driev_emergency_opt_in_count = int(data.get("driev_emergency_opt_in_count", 8))
-    solar_multiplier = float(data.get("solar_multiplier", 1.0))
-    load_multiplier = float(data.get("load_multiplier", 1.0))
-    day_name = data.get("day_name", "Mon")
-    day_type = data.get("day_type", "weekday")
+    try:
+        outage_hours = _parse_outage_hours(data.get("outage_hours", [19, 20, 21]))
+        disaster_type = str(data.get("disaster_type", "monsoon_waterlogging") or "none")
+        is_disaster_active = bool(str(data.get("is_disaster_active", "true")).lower() not in ("false", "0", "no")
+                                  and disaster_type != "none") if isinstance(data.get("is_disaster_active"), str) \
+            else bool(data.get("is_disaster_active", True) and disaster_type != "none")
+        isolated_block = data.get("isolated_block") or data.get("isolated_building")
+        hazard_hour = _safe_int(data.get("hazard_hour", 20), 20, 0, 23)
+        battery_soh_pct = None
+        if "battery_soh_pct" in data and data["battery_soh_pct"] not in (None, ""):
+            battery_soh_pct = _safe_float(data["battery_soh_pct"], 82.0, 0.0, 100.0)
+        days_in_service = _safe_int(data.get("days_in_service", 200), 200, 0, 3000)
+        driev_emergency_opt_in_count = _safe_int(data.get("driev_emergency_opt_in_count", 8), 8, 0, 12)
+        solar_multiplier = _safe_float(data.get("solar_multiplier", 1.0), 1.0, 0.0, 3.0)
+        load_multiplier = _safe_float(data.get("load_multiplier", 1.0), 1.0, 0.0, 3.0)
+        day_name = str(data.get("day_name", "Mon") or "Mon")[:3]
+        day_type = str(data.get("day_type", "weekday") or "weekday")
+        if day_type not in ("weekday", "weekend"):
+            day_type = "weekday"
 
-    disaster_start_hour = data.get("disaster_start_hour")
-    if disaster_start_hour is None:
-        disaster_start_hour = data.get("cyclone_start_hour")
-    else:
-        disaster_start_hour = int(disaster_start_hour)
-        
-    disaster_end_hour = data.get("disaster_end_hour")
-    if disaster_end_hour is None:
-        disaster_end_hour = data.get("cyclone_end_hour")
-    else:
-        disaster_end_hour = int(disaster_end_hour)
+        def _opt(k1, k2):
+            v = data.get(k1, data.get(k2))
+            if v in (None, ""):
+                return None
+            return _safe_int(v, None, 0, 23)  # type: ignore
+        disaster_start_hour = _opt("disaster_start_hour", "cyclone_start_hour")
+        disaster_end_hour = _opt("disaster_end_hour", "cyclone_end_hour")
+    except Exception as exc:
+        return jsonify({"error": f"Invalid parameters: {exc}"}), 400
 
-    results = execute_simulation(
-        outage_hours=outage_hours,
-        disaster_type=disaster_type,
-        is_disaster_active=is_disaster_active,
-        isolated_block=isolated_block,
-        hazard_hour=hazard_hour,
-        battery_soh_pct=battery_soh_pct,
-        days_in_service=days_in_service,
-        driev_emergency_opt_in_count=driev_emergency_opt_in_count,
-        solar_multiplier=solar_multiplier,
-        load_multiplier=load_multiplier,
-        day_name=day_name,
-        day_type=day_type,
-        disaster_start_hour=disaster_start_hour,
-        disaster_end_hour=disaster_end_hour,
-        cyclone_start_hour=disaster_start_hour,
-        cyclone_end_hour=disaster_end_hour,
-    )
+    ok, err = _check_auth_and_rate("sim")
+    if not ok:
+        return err  # type: ignore
+    try:
+        results = execute_simulation(
+            outage_hours=outage_hours,
+            disaster_type=disaster_type,
+            is_disaster_active=is_disaster_active,
+            isolated_block=isolated_block,
+            hazard_hour=hazard_hour,
+            battery_soh_pct=battery_soh_pct,
+            days_in_service=days_in_service,
+            driev_emergency_opt_in_count=driev_emergency_opt_in_count,
+            solar_multiplier=solar_multiplier,
+            load_multiplier=load_multiplier,
+            day_name=day_name,
+            day_type=day_type,
+            disaster_start_hour=disaster_start_hour,
+            disaster_end_hour=disaster_end_hour,
+            cyclone_start_hour=disaster_start_hour,
+            cyclone_end_hour=disaster_end_hour,
+        )
+    except Exception as exc:
+        log.exception("simulation/compare failed")
+        return jsonify({"error": f"Simulation failed: {exc}"}), 500
     return jsonify(results.get("scenario_comparison", results.get("outage_comparison", {})))
 
 
@@ -1122,30 +1713,46 @@ def get_active_alerts():
     """
     Returns the list of active simulated emergency alerts for the current simulation state.
     Supports GET (with query parameters) and POST (with JSON payload).
+    Uses the 5-min simulation cache, so repeated polls for one hour don't re-run
+    the full 24h + 48 LPs every time.
     """
     if request.method == "POST":
         data = request.get_json(force=True, silent=True) or {}
     else:
         data = request.args.to_dict()
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid parameters"}), 400
 
-    hour = int(data.get("hour", 20))
-    outage_hours_raw = data.get("outage_hours", [19, 20, 21])
-    if isinstance(outage_hours_raw, str):
-        outage_hours = [int(x) for x in outage_hours_raw.split(",") if x.strip()]
-    else:
-        outage_hours = list(outage_hours_raw)
+    ok, err = _check_auth_and_rate("sim")
+    if not ok:
+        return err  # type: ignore
+    hour = _safe_int(data.get("hour", 20), 20, 0, 23)
+    outage_hours = _parse_outage_hours(data.get("outage_hours", [19, 20, 21]))
 
-    disaster_type = data.get("disaster_type", "monsoon_waterlogging")
-    is_disaster_active = bool(data.get("is_disaster_active", True) and (disaster_type not in (None, "none", "")))
+    disaster_type = str(data.get("disaster_type", "monsoon_waterlogging") or "none")
+    is_disaster_active = bool(data.get("is_disaster_active", True) and disaster_type != "none")
     isolated_block = data.get("isolated_block") or data.get("isolated_building")
 
-    sim = execute_simulation(
-        outage_hours=outage_hours,
-        disaster_type=disaster_type,
-        is_disaster_active=is_disaster_active,
-        isolated_block=isolated_block,
-        hazard_hour=hour,
-    )
+    _ck = _sim_cache_key({"op": "alerts", "hour": hour, "outage_hours": outage_hours,
+                          "disaster_type": disaster_type, "is_disaster_active": is_disaster_active,
+                          "isolated_block": isolated_block})
+    sim = None
+    if _ck and _ck in _SIM_CACHE and time.time() - _SIM_CACHE[_ck][0] < _SIM_CACHE_TTL_SEC:
+        sim = _SIM_CACHE[_ck][1]
+    else:
+        try:
+            sim = execute_simulation(
+                outage_hours=outage_hours,
+                disaster_type=disaster_type,
+                is_disaster_active=is_disaster_active,
+                isolated_block=isolated_block,
+                hazard_hour=hour,
+            )
+            if _ck:
+                _SIM_CACHE[_ck] = (time.time(), sim)
+        except Exception as exc:
+            log.exception("alerts/active simulation failed")
+            return jsonify({"error": f"Simulation failed: {exc}"}), 500
 
     target_hour_record = next((h_rec for h_rec in sim["hourly"] if h_rec["hour"] == hour), sim["hourly"][0])
     active_alerts = target_hour_record.get("alerts", [])
@@ -1165,6 +1772,9 @@ def get_active_alerts():
 
 @app.route("/api/audit/certificate", methods=["GET"])
 def get_audit_certificate():
+    ok, err = _check_auth_and_rate("audit")
+    if not ok:
+        return err  # type: ignore
     sim_data = execute_simulation()
     return jsonify({
         "certificate_title": "SynapTwin Official SOA ITER Microgrid Energy Flexibility & Fairness Audit Certificate",
@@ -1179,28 +1789,37 @@ def get_audit_certificate():
         "fairness_guarantee": {
             "algorithm": "Max-Min Fairness Linear Program (LP) & Lexicographic Priority Triage",
             "mathematical_objective": "Maximize minimum satisfaction ratio min_i(x_i / d_i) subject to feeder and capacity limits",
-            "starvation_probability": "0.00% (Mathematically impossible under non-zero capacity)",
+            # Honest: Tier-4 CAN starve by design in triage; routine fairness is
+            # starvation-free only when battery > 0 and deficits finite.
+            "starvation_probability": (
+                "0.00% routine (non-zero battery, max-min guarantees non-zero share); "
+                "Tier-4 sheddable by design in DISASTER_TRIAGE"
+                if sim_data["audit_ledger"].get("tier1_unmet_kwh_day", 0) <= 0.01
+                else f"Tier-1 shortfall {sim_data['audit_ledger'].get('tier1_unmet_kwh_day')} kWh — grid backup required"
+            ),
             "disaster_protocol": "Life-safety (Medical Point & Server Room) locked Tier-1 priority",
+            "verification_status": sim_data["audit_ledger"].get("verification_status"),
         },
     })
 
 
-@app.route("/api/battery/trajectory", methods=["GET"])
-def get_battery_trajectory():
+@lru_cache(maxsize=4)
+def _cached_battery_trajectory(rated_kwh: float, rated_kw: float, throughput: float) -> dict:
+    """Memoized 5-year aging curve — deterministic given inputs, so recomputing
+    on EVERY request (previous behaviour, flagged in review) wasted CPU.
+    Cache size 4 covers default + a few custom combos."""
     sim_battery = BatteryHealthState(
-        rated_capacity_kwh=BATTERY_RATED_CAPACITY_KWH,
-        rated_power_kw=BATTERY_RATED_POWER_KW,
+        rated_capacity_kwh=rated_kwh,
+        rated_power_kw=rated_kw,
         soh_pct=82.0,
     )
     history = []
     milestones = []
     prev_tier = sim_battery.duty_tier
-
     for day in range(0, 1801, 15):
         if day > 0:
             for _ in range(15):
-                sim_battery.record_day_cycling(200.0)
-
+                sim_battery.record_day_cycling(throughput)
         curr_tier = sim_battery.duty_tier
         if curr_tier != prev_tier:
             milestones.append({
@@ -1211,7 +1830,6 @@ def get_battery_trajectory():
                 "soh_pct": round(sim_battery.soh_pct, 2),
             })
             prev_tier = curr_tier
-
         history.append({
             "day": day,
             "year": round(day / 365.0, 2),
@@ -1221,10 +1839,21 @@ def get_battery_trajectory():
             "available_power_kw": sim_battery.available_power_kw,
             "total_cycles": round(sim_battery.total_equivalent_cycles, 1),
         })
+    return {"trajectory": history, "milestones": milestones}
 
+
+@app.route("/api/battery/trajectory", methods=["GET"])
+def get_battery_trajectory():
+    # Optional query overrides (validated + clamped); defaults preserve frontend contract.
+    try:
+        throughput = _safe_float(request.args.get("daily_throughput_kwh", 200.0), 200.0, 0.0, 1000.0)
+    except Exception:
+        throughput = 200.0
+    data = _cached_battery_trajectory(BATTERY_RATED_CAPACITY_KWH, BATTERY_RATED_POWER_KW, throughput)
     return jsonify({
-        "trajectory": history,
-        "milestones": milestones,
+        "trajectory": data["trajectory"],
+        "milestones": data["milestones"],
+        "cached": True,
         "tiers": [
             {"tier": tier, "threshold_soh": thresh, "derate_factor": factor}
             for tier, thresh, factor in TIER_THRESHOLDS
@@ -1234,28 +1863,52 @@ def get_battery_trajectory():
 
 @app.route("/api/privacy/view", methods=["GET"])
 def get_privacy_view():
-    hour = int(request.args.get("hour", 20))
-    role = request.args.get("role", "hostel_a")
+    ok, err = _check_auth_and_rate("privacy")
+    if not ok:
+        return err  # type: ignore
+    hour = _safe_int(request.args.get("hour", 20), 20, 0, 23)
+    role = (request.args.get("role", "hostel_a") or "hostel_a").strip()
 
-    sim_data = execute_simulation()
+    try:
+        sim_data = execute_simulation()
+    except Exception as exc:
+        log.exception("privacy/view simulation failed")
+        return jsonify({"error": f"Simulation failed: {exc}"}), 500
     hourly_record = next((h for h in sim_data["hourly"] if h["hour"] == hour), sim_data["hourly"][0])
 
     store = SecureMeterStore()
     store.put_record("sample_hour", hourly_record)
-    ciphertext_sample = store.get_ciphertext("sample_hour").decode("latin1", errors="ignore")[:80] + "..."
+    try:
+        _ct = store.get_ciphertext("sample_hour")
+        ciphertext_sample = _ct.decode("utf-8", errors="ignore")[:80] + "..."
+    except Exception:
+        ciphertext_sample = "<ciphertext unavailable>"
 
+    # Legacy 3-block aliases + full 16-building names (Hostel 2 was previously
+    # unreachable; hostel_b historically means Hostel 7 — kept for compat).
     role_mapping = {
         "hostel_a": "ITER Boys Hostel 1",
+        "hostel_1": "ITER Boys Hostel 1",
         "hostel_b": "ITER Boys Hostel 7",
-        "academic": "C-block",
+        "hostel_7": "ITER Boys Hostel 7",
+        "hostel_2": "ITER Boys Hostel 2",
+        "hostel2": "ITER Boys Hostel 2",
+        "academic": "C-Block (Academic)",
+        "c-block": "C-Block (Academic)",
+        "cblock": "C-Block (Academic)",
+        "admin": "admin",
     }
-
-    if role == "admin":
+    norm_role = role.lower().strip()
+    if norm_role == "admin":
         view = admin_view(hourly_record)
         view_type = "UNREDACTED_CAMPUS_ADMIN"
     else:
-        block_name = role_mapping.get(role, role)
-        view = block_view(hourly_record, block_name)
+        block_name = role_mapping.get(norm_role, role)
+        try:
+            view = block_view(hourly_record, block_name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc),
+                            "hint": "Use role=admin or a valid building name (e.g. hostel_a, hostel_2, hostel_7, academic)"}), 404
         view_type = f"REDACTED_BLOCK_VIEW_{block_name.upper().replace(' ', '_')}"
 
     return jsonify({
@@ -1272,9 +1925,18 @@ def get_privacy_view():
 def get_historical_30day():
     hist_file = BASE_DIR / "data" / "historical_30day.json"
     if hist_file.exists():
-        with open(hist_file, "r", encoding="utf-8") as f:
-            return jsonify(json.load(f))
-    return jsonify({"error": "historical data not found"}), 404
+        try:
+            with open(hist_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            # Tag explicitly as static file (photo review noted this is NOT live data).
+            if isinstance(payload, dict) and "data_type" not in payload:
+                payload["data_type"] = "static_30day_file"
+                payload["is_live"] = False
+            return jsonify(payload)
+        except (json.JSONDecodeError, OSError) as exc:
+            log.warning("history/30day read failed: %s", exc)
+            return jsonify({"error": f"historical data unreadable: {exc}"}), 500
+    return jsonify({"error": "historical data not found — run data/generate_30day_history.py to create it"}), 404
 
 
 @app.route("/api/history/multiyear", methods=["GET", "POST"])
@@ -1287,18 +1949,27 @@ def get_multiyear_projection():
         data = request.get_json(force=True, silent=True) or {}
     else:
         data = request.args.to_dict()
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid parameters"}), 400
 
-    years = int(data.get("years", 5))
-    solar_degrade = float(data.get("solar_degradation_pct", 0.5))
-    tariff_esc = float(data.get("tariff_escalation_pct", 3.5))
-    include_battery = str(data.get("include_battery_aging", "true")).lower() in ("true", "1")
+    try:
+        years = _safe_int(data.get("years", 5), 5, 1, 10)
+        solar_degrade = _safe_float(data.get("solar_degradation_pct", 0.5), 0.5, 0.0, 5.0)
+        tariff_esc = _safe_float(data.get("tariff_escalation_pct", 3.5), 3.5, -5.0, 20.0)
+    except Exception as exc:
+        return jsonify({"error": f"Invalid parameters: {exc}"}), 400
+    include_battery = str(data.get("include_battery_aging", "true")).lower() in ("true", "1", "yes")
 
-    projection_result = generate_multiyear_projection(
-        years=years,
-        solar_degradation_pct=solar_degrade,
-        tariff_escalation_pct=tariff_esc,
-        include_battery_aging=include_battery,
-    )
+    try:
+        projection_result = generate_multiyear_projection(
+            years=years,
+            solar_degradation_pct=solar_degrade,
+            tariff_escalation_pct=tariff_esc,
+            include_battery_aging=include_battery,
+        )
+    except Exception as exc:
+        log.exception("multiyear projection failed")
+        return jsonify({"error": f"Projection failed: {exc}"}), 500
     return jsonify(projection_result)
 
 
@@ -1306,7 +1977,9 @@ def get_multiyear_projection():
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve_frontend(path):
-    if path.startswith("api/"):
+    # Strict /api/ guard (§5.6): case-insensitive, exact segment (previously
+    # "apiary/..." false-404'd as JSON while "/API/..." fell through to SPA).
+    if (path or "").lower().split("/")[0] == "api":
         return jsonify({"error": "API endpoint not found", "path": path}), 404
     static_folder = Path(app.static_folder)
     if static_folder.exists() and (static_folder / path).exists() and path != "":
@@ -1332,6 +2005,9 @@ def serve_frontend(path):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    print(f"Starting S24 Digital Twin API Server on http://0.0.0.0:{port}")
+    try:
+        port = int((app_config.PORT if app_config is not None else os.environ.get("PORT", 5000)))
+    except (TypeError, ValueError):
+        port = 5000
+    log.info("Starting S24 Digital Twin API Server on http://0.0.0.0:%s", port)
     app.run(host="0.0.0.0", port=port, debug=False)

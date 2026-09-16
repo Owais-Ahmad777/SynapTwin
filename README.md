@@ -63,6 +63,6 @@ SynapTwin is architected for unified single-service web deployment on Render.com
   cd s24_backend && gunicorn server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
   ```
 - **Environment Variables:**
-  - `PYTHON_VERSION`: `3.14.3`
+  - `PYTHON_VERSION`: `3.11.8` (must match `render.yaml`; code targets 3.11)
   - `GEMINI_API_KEY`: *(Optional)* Google Gemini API key for live AI natural language explainability. If omitted, SynapTwin automatically falls back to its deterministic rule-based explainer.
   - `FERNET_SECRET_KEY`: *(Optional)* Fernet key for encrypting smart meter telemetry. If omitted, a fresh key is generated at startup.

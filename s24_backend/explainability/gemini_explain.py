@@ -18,12 +18,33 @@ Two modes:
 Set the key via environment variable: export GEMINI_API_KEY="..."
 """
 
+import logging
 import os
 
 import requests
 
+log = logging.getLogger("synaptwin.explain")
+
+try:
+    from config import GEMINI_API_KEY as _CFG_KEY, is_gemini_configured as _is_gemini_cfg
+    _HAS_CONFIG = True
+except ImportError:
+    _CFG_KEY = ""
+    _HAS_CONFIG = False
+    def _is_gemini_cfg():  # type: ignore
+        return False
+
 GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+
+def _api_key() -> str:
+    k = (_CFG_KEY or "").strip() if _HAS_CONFIG else ""
+    if not k:
+        k = (os.environ.get("GEMINI_API_KEY", "") or "").strip()
+    if _HAS_CONFIG and k and not _is_gemini_cfg():
+        return ""  # placeholder -> force offline
+    return k
 
 SYSTEM_INSTRUCTION = (
     "You are the explainability layer of a campus shared-battery energy system. "
@@ -43,13 +64,16 @@ def explain(result, blocks, hour: int | None = None) -> str:
     blocks: the list[BlockState] passed into allocate (for load/solar context)
     hour: optional hour-of-day (0-23) for context in the explanation
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = _api_key()
     if not api_key:
         return _offline_explain(result, blocks, hour)
 
     payload_summary = _build_summary(result, blocks, hour)
 
     try:
+        # Data minimisation (§3.5): aggregates + rounded kW only, no raw IDs
+        # beyond block names required for the narrative. Short timeout so a
+        # slow LLM never stalls the 24h loop (use offline batch by default).
         resp = requests.post(
             GEMINI_URL,
             params={"key": api_key},
@@ -58,13 +82,13 @@ def explain(result, blocks, hour: int | None = None) -> str:
                 "contents": [{"parts": [{"text": payload_summary}]}],
                 "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300},
             },
-            timeout=10,
+            timeout=5,
         )
         resp.raise_for_status()
         data = resp.json()
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as exc:  # noqa: BLE001 - deliberate fallback for demo resilience
-        print(f"[gemini_explain] Live Gemini call failed ({exc}); using offline explainer")
+        log.warning("[gemini_explain] Live Gemini call failed (%s); using offline explainer", exc)
         return _offline_explain(result, blocks, hour)
 
 

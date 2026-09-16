@@ -4,8 +4,9 @@ services:
     runtime: python
     plan: free
     region: singapore
-    buildCommand: "cd s24_frontend && npm install && npm run build && cd ../s24_backend && pip install -r requirements.txt"
-    startCommand: "cd s24_backend && gunicorn server:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    buildCommand: "cd s24_frontend && npm install && npm run build && cd ../s24_backend && pip install --prefer-binary -r requirements.txt"
+    startCommand: "cd s24_backend && gunicorn server:app --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120 --graceful-timeout 30 --max-requests 200 --max-requests-jitter 20 --keep-alive 5 --access-logfile -"
+    healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.8
@@ -13,3 +14,11 @@ services:
         sync: false
       - key: FERNET_SECRET_KEY
         sync: false
+      - key: CORS_ORIGINS
+        value: https://synaptwin.onrender.com
+      - key: ENABLE_LIVE_LLM_PER_HOUR
+        value: "false"
+      - key: SIM_CACHE_TTL_SEC
+        value: "300"
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "120"

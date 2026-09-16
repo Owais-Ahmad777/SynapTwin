@@ -53,34 +53,26 @@ class DriEVScooter:
 
 
 def get_hourly_driev_state(
-    hour: int, 
-    is_outage: bool = False, 
-    emergency_opt_in_count: int = 8, 
+    hour: int,
+    is_outage: bool = False,
+    emergency_opt_in_count: int = 8,
     surplus_kw: float = 0.0
 ) -> dict:
     """
     Computes dynamic fleet state for a given hour of the day (0 to 23).
-    Reflects the exact 12-unit campus scooter mobility schedule:
-    
-    1. Night/Overnight Window (8:00 PM to 8:00 AM / Hours 20:00 – 08:00):
-       - Zero active rentals: on_ride_count = 0.
-       - Charging at Bay: 10 scooters (6 Speed + 4 Luxe).
-       - Available for Booking: 2 fully charged idle scooters (1 Speed + 1 Luxe).
-       - Charging Bay Load: ~5.8 kW to 6.5 kW.
-       
-    2. Peak Hiring Windows (12:00 PM Lunch Peak & 3:00 PM – 7:00 PM Afternoon/Evening Peak):
-       - Hours 12 & Hours 15, 16, 17, 18, 19:
-       - on_ride_count: 8 scooters (5 Speed + 3 Luxe).
-       - available_count: 2 scooters (1 Speed + 1 Luxe).
-       - charging_count: 2 scooters (1 Speed + 1 Luxe).
-       
-    3. Standard Daytime Windows (8:00 AM – 11:59 AM & 1:00 PM – 2:59 PM):
-       - Hours 8, 9, 10, 11 & Hours 13, 14:
-       - on_ride_count: 4 scooters (2 Speed + 2 Luxe).
-       - available_count: 4 scooters (2 Speed + 2 Luxe).
-       - charging_count: 4 scooters (3 Speed + 1 Luxe).
-       
-    Validation: (charging_count + available_count + on_ride_count) == 12 total units.
+    Reflects the 12-unit campus scooter mobility schedule (code is authoritative;
+    doc matches implementation):
+
+    1. Night (20:00-08:00): ALL 12 CHARGING, 0 on-ride, 0 available
+       (overnight slow-charge window; outage flips CHARGING->AVAILABLE so the
+       buffer is actually usable).
+    2. Midday peak (12:00) + afternoon peak (15:00-18:00):
+       8 on-ride (5 Speed + 3 Luxe), 2 available, 2 charging.
+    3. Off-peak daytime (08:00-11:00, 13:00-14:00):
+       4 on-ride, 4-5 available, 3-4 charging (Speed/Luxe split varies).
+    4. Evening return (19:00): 2 on-ride, 3 available, 7 charging.
+
+    Validation: (charging + available + on_ride) == 12 total units.
     """
     fleet: list[DriEVScooter] = []
 
@@ -262,24 +254,79 @@ def driev_emergency_buffer_kw(fleet: list[DriEVScooter]) -> float:
 
 
 def redirect_solar_surplus_to_driev(fleet: list[DriEVScooter], surplus_kw: float) -> dict[str, float]:
-    """Redirects midday solar surplus across charging scooters up to each charger limit."""
+    """Redirects solar surplus across charging scooters (round-robin, capped per
+    charger + headroom). Previous single-pass split wasted remainder when one
+    scooter capped early."""
     delivered = {s.id: 0.0 for s in fleet}
     eligible = [s for s in fleet if s.status == "CHARGING" and s.charge_headroom_kwh > 0.05]
     if not eligible or surplus_kw <= 0.01:
         return delivered
 
-    remaining = surplus_kw
-    share = remaining / len(eligible)
-    for s in eligible:
-        give = min(share, s.charger_power_kw, s.charge_headroom_kwh)
-        delivered[s.id] = round(give, 2)
-        s.soc_pct = min(100.0, round(s.soc_pct + (give / s.battery_capacity_kwh) * 100.0, 1))
+    remaining = max(0.0, float(surplus_kw))
+    # Round-robin in small slices so capped scooters don't starve the rest.
+    # Each pass gives every still-hungry scooter an equal share of what's left.
+    active = list(eligible)
+    guard = 0
+    while active and remaining > 1e-6 and guard < 50:
+        guard += 1
+        share = remaining / len(active)
+        next_active: list[DriEVScooter] = []
+        for s in active:
+            headroom_kw = min(s.charger_power_kw - delivered[s.id], s.charge_headroom_kwh - delivered[s.id])
+            if headroom_kw <= 1e-9:
+                continue
+            give = min(share, headroom_kw, remaining)
+            give = round(give, 3)
+            if give <= 0:
+                continue
+            delivered[s.id] = round(delivered[s.id] + give, 3)
+            remaining = max(0.0, round(remaining - give, 3))
+            if delivered[s.id] + 1e-9 < min(s.charger_power_kw, s.charge_headroom_kwh):
+                next_active.append(s)
+        active = next_active
+        if share <= 1e-9:
+            break
 
+    for s in fleet:
+        if delivered.get(s.id, 0) > 0:
+            s.soc_pct = min(100.0, round(s.soc_pct + (delivered[s.id] / s.battery_capacity_kwh) * 100.0, 1))
+            delivered[s.id] = round(delivered[s.id], 2)
     return delivered
 
 
-def get_driev_fleet_summary(fleet: list[DriEVScooter]) -> dict:
-    return get_hourly_driev_state(12, is_outage=False)
+def get_driev_fleet_summary(fleet: list[DriEVScooter] | None = None,
+                            emergency_opt_in_count: int = 8,
+                            hour: int = 12,
+                            is_outage: bool = False) -> dict:
+    """Fleet summary. Accepts an existing fleet (uses its live SOC/status) or
+    falls back to deterministic hour-12 state. Previously ignored the fleet
+    argument entirely and always returned hour-12 defaults, losing custom
+    opt-in counts."""
+    if fleet:
+        charging = sum(1 for s in fleet if s.status == "CHARGING")
+        available = sum(1 for s in fleet if s.status == "AVAILABLE")
+        on_ride = sum(1 for s in fleet if s.status == "ON_RIDE")
+        return {
+            "fleet_brand": "driEV Campus Shared Mobility",
+            "total_scooters": len(fleet),
+            "speed_tier_count": sum(1 for s in fleet if s.tier == "Speed"),
+            "luxe_tier_count": sum(1 for s in fleet if s.tier == "Luxe"),
+            "charging_count": charging,
+            "available_count": available,
+            "on_ride_count": on_ride,
+            "charging_bay_demand_kw": total_driev_charging_demand_kw(fleet),
+            "emergency_buffer_available_kw": driev_emergency_buffer_kw(fleet),
+            "total_stored_energy_kwh": round(sum(s.energy_stored_kwh for s in fleet), 1),
+            "scooters": [
+                {
+                    "id": s.id, "tier": s.tier, "capacity_kwh": s.battery_capacity_kwh,
+                    "soc_pct": s.soc_pct, "range_km": s.range_km, "status": s.status,
+                    "charger_kw": s.charger_power_kw, "emergency_opt_in": s.emergency_buffer_opt_in,
+                } for s in fleet
+            ],
+        }
+    return get_hourly_driev_state(hour, is_outage=is_outage,
+                                  emergency_opt_in_count=emergency_opt_in_count)
 
 
 if __name__ == "__main__":
