@@ -1,5 +1,8 @@
 # SynapTwin | Community Energy Flexibility & Shared-Battery Digital Twin
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+
 [![Live Production Demo](https://img.shields.io/badge/Live_Demo-synaptwin.onrender.com-brightgreen?style=for-the-badge&logo=render&logoColor=white)](https://synaptwin.onrender.com/)
 [![React 19](https://img.shields.io/badge/Frontend-React_19_%2B_Vite-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://synaptwin.onrender.com/)
 [![Flask](https://img.shields.io/badge/Backend-Flask_REST_API-4B8BBE?style=for-the-badge&logo=flask&logoColor=white)](https://synaptwin.onrender.com/)
@@ -66,3 +69,10 @@ SynapTwin is architected for unified single-service web deployment on Render.com
   - `PYTHON_VERSION`: `3.11.8` (must match `render.yaml`; code targets 3.11)
   - `GEMINI_API_KEY`: *(Optional)* Google Gemini API key for live AI natural language explainability. If omitted, SynapTwin automatically falls back to its deterministic rule-based explainer.
   - `FERNET_SECRET_KEY`: *(Optional)* Fernet key for encrypting smart meter telemetry. If omitted, a fresh key is generated at startup.
+## Author & Copyright
+
+**SynapTwin** is designed and developed by [Owais Ahmad](https://github.com/Owais-Ahmad777).
+
+© 2026 Owais Ahmad. All rights reserved.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
