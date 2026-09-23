@@ -173,7 +173,7 @@ export default function KPIBanner({
         >
           <div className="kpi-header">
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>Rooftop Solar PV</span>
+              <span>Solar Yield</span>
               <button
                 onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'solar' ? null : 'solar'); }}
                 title="Click for details on Rooftop Solar PV generation"
@@ -219,7 +219,7 @@ export default function KPIBanner({
         >
           <div className="kpi-header">
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>Campus Demand</span>
+              <span>Live Demand</span>
               <button
                 onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'demand' ? null : 'demand'); }}
                 title="Click for details on total campus electrical demand"
@@ -262,7 +262,7 @@ export default function KPIBanner({
         >
           <div className="kpi-header">
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>Battery Output (SoH)</span>
+              <span>Battery Reserve</span>
               <button
                 onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'battery' ? null : 'battery'); }}
                 title="Click for details on Second-Life EV Battery Health & Derating"
@@ -315,7 +315,7 @@ export default function KPIBanner({
         >
           <div className="kpi-header">
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>{isHeatwave ? 'Triage Peak-Shaving' : (isTriageMode ? 'Triage Life-Safety' : 'Max-Min Fairness')}</span>
+              <span>{isHeatwave ? 'Triage Mode' : (isTriageMode ? 'Triage Mode' : 'Fair Share')}</span>
               <button 
                 onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'fairness' ? null : 'fairness'); }}
                 title="Click for mathematical definition & worked example"
@@ -386,7 +386,7 @@ export default function KPIBanner({
         >
           <div className="kpi-header">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>Financial ROI (ToU)</span>
+            <span>₹ Saved Today</span>
             <button
               onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'delta' ? null : 'delta'); }}
               title="Click for details on TPCODL ToU Tariff Savings & Optimization Value"
@@ -428,7 +428,7 @@ export default function KPIBanner({
       >
         <div className="kpi-header">
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>driEV Scooter Hub</span>
+              <span>driEV Buffer</span>
             <button
               onClick={(e) => { e.stopPropagation(); setActiveTooltip(activeTooltip === 'driev' ? null : 'driev'); }}
               title="Click for details on driEV Campus Scooter Fleet & Solar Soak"

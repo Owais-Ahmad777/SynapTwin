@@ -25,6 +25,31 @@ from pathlib import Path
 OSM_DATA_PATH = Path(__file__).parent / "campus_data" / "osm_buildings.json"
 
 EARTH_RADIUS_M = 6371000.0
+FLOOR_HEIGHT_M = 3.5  # typical institutional floor-to-floor height, used to turn levels into a 3D extrusion height
+
+# For the ~10 of 16 buildings that carry no `building:levels` tag in OSM,
+# a flat default of 1 level (used previously) understates most of them badly —
+# several are multi-storey academic blocks. These are informed estimates
+# (matched to sibling buildings of the same type/role on this campus, and to
+# names/photos of the buildings), NOT OSM-verified data. They are flagged
+# with `levels_verified: false` in the exported GeoJSON so the dashboard can
+# show the distinction. Replace any of these with `building:levels` in
+# OpenStreetMap (or a surveyed value) for a verified figure.
+ESTIMATED_LEVELS_BY_OSM_ID: dict[int, int] = {
+    825753849: 1,    # small unnamed structure — assumed single-storey utility building
+    1043463346: 3,   # A-Block — academic block, estimated in line with C-Block/Admin (3 floors)
+    1043463347: 2,   # ITER Boys Hostel 2 — dormitory, estimated (unverified)
+    1043463348: 1,   # ITER Boys Hostel 1 — explicitly documented in project materials as single-storey
+}
+# Matched by name for the remaining untagged buildings (osm_id fallback below covers any not listed here)
+ESTIMATED_LEVELS_BY_NAME: dict[str, int] = {
+    "ITER Cafeteria": 1,                # single-storey food service building
+    "S-Block (Sports Complex)": 1,      # gymnasium/sports-hall massing
+    "G-Block": 3,                       # academic block, matched to C-Block/Admin
+    "F-Block": 3,                       # academic block, matched to C-Block/Admin
+    "Centre for Data Science": 2,       # smaller academic/research block
+}
+DEFAULT_ESTIMATED_LEVELS = 1
 
 
 @dataclass
@@ -34,6 +59,8 @@ class CampusBuilding:
     building_type: str          # OSM 'building' tag value: college, dormitory, yes, etc.
     amenity: str | None         # e.g. 'conference_centre', 'fast_food'
     levels: int
+    levels_verified: bool        # True only if `building:levels` was present in the source OSM data
+    height_m: float              # levels * FLOOR_HEIGHT_M — used to extrude the building in the 3D map
     footprint_m2: float          # roof/ground footprint area
     gross_floor_area_m2: float   # footprint x levels — total usable floor area
     centroid_lat: float
@@ -77,16 +104,28 @@ def load_campus_buildings(path: Path = OSM_DATA_PATH) -> list[CampusBuilding]:
             continue
 
         area = _polygon_area_m2(ring)
-        levels = int(tags.get("building:levels", 1) or 1)
+        name = tags.get("name", f"Unnamed building {el['id']}")
+        raw_levels_tag = tags.get("building:levels")
+        levels_verified = raw_levels_tag is not None
+        if levels_verified:
+            levels = int(raw_levels_tag)
+        else:
+            levels = (
+                ESTIMATED_LEVELS_BY_OSM_ID.get(el["id"])
+                or ESTIMATED_LEVELS_BY_NAME.get(name)
+                or DEFAULT_ESTIMATED_LEVELS
+            )
         centroid_lat = sum(p[0] for p in ring) / len(ring)
         centroid_lon = sum(p[1] for p in ring) / len(ring)
 
         buildings.append(CampusBuilding(
             osm_id=el["id"],
-            name=tags.get("name", f"Unnamed building {el['id']}"),
+            name=name,
             building_type=tags.get("building", "yes"),
             amenity=tags.get("amenity"),
             levels=levels,
+            levels_verified=levels_verified,
+            height_m=round(levels * FLOOR_HEIGHT_M, 1),
             footprint_m2=round(area, 1),
             gross_floor_area_m2=round(area * levels, 1),
             centroid_lat=round(centroid_lat, 7),
@@ -108,6 +147,8 @@ def to_geojson(buildings: list[CampusBuilding]) -> dict:
                 "building_type": b.building_type,
                 "amenity": b.amenity,
                 "levels": b.levels,
+                "levels_verified": b.levels_verified,
+                "height_m": b.height_m,
                 "footprint_m2": b.footprint_m2,
                 "gross_floor_area_m2": b.gross_floor_area_m2,
             },

@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { 
-  Sliders, Play, RotateCcw, AlertTriangle, ShieldAlert, 
+  Sliders, Play, AlertTriangle, ShieldAlert,
   Battery, Sun, Flame, Wind, Droplets, Info, ChevronDown, ChevronUp, Power, Clock, Zap, Check 
 } from 'lucide-react';
 
 export default function SandboxPanel({ 
   simParams, 
   onParamChange, 
-  onRunSimulation, 
-  onResetDemoDefaults,
+  onRunSimulation,
   isRunning = false,
   batteryHealth,
   outageComparison,
@@ -72,7 +71,7 @@ export default function SandboxPanel({
     grid_transformer_fault: { start: 12, end: 15, causes_outage: true, label: 'Transformer Fault Emergency Repair', icon: Zap, color: '#ef4444' },
     extended_outage: { start: 12, end: 15, causes_outage: true, label: '33kV Feeder Outage Repair', icon: AlertTriangle, color: '#ef4444' },
     electrical_fire: { start: 11, end: 13, causes_outage: true, label: 'Riser Isolation & Safety Clearance', icon: Flame, color: '#f97316' },
-    monsoon_waterlogging: { start: 17, end: 22, causes_outage: true, label: 'Torrential Downpour & Sump Drainage', icon: Droplets, color: '#38bdf8' },
+    monsoon_waterlogging: { start: 17, end: 22, causes_outage: true, label: 'Torrential Downpour & Sump Drainage', icon: Droplets, color: '#ea580c' },
     heatwave_stress: { start: 11, end: 16, causes_outage: false, label: 'Peak AC Load & Thermal Surge', icon: Sun, color: '#fbbf24' },
   };
 
@@ -138,15 +137,15 @@ export default function SandboxPanel({
   // Button labels and colors based on precise cause of outage
   let currentHourBtnLabel = 'CUT POWER NOW';
   let currentHourBtnTitle = `Click to cut power and trigger islanded triage at Hour ${currentHour}:00`;
-  let currentHourBtnBg = 'rgba(16,185,129,0.2)';
-  let currentHourBtnColor = '#34d399';
-  let currentHourBtnBorder = '1px solid #10b981';
+  let currentHourBtnBg = 'rgba(255,133,0,0.2)';
+  let currentHourBtnColor = 'var(--energy-green)';
+  let currentHourBtnBorder = '1px solid rgba(255,133,0,0.5)';
 
   if (isCurrentHourDisasterLocked) {
     const shortLabel = simParams.disaster_type === 'cyclone_severe_storm' ? 'Cyclone' : (simParams.disaster_type === 'grid_transformer_fault' ? 'Fault' : 'Disaster');
     currentHourBtnLabel = `RESTORE GRID (Ends ${shortLabel} Early)`;
     currentHourBtnTitle = `Hour ${currentHour}:00 is locked under ${currentDisaster.label} (Hours ${disasterStart}–${disasterEnd}). Click to end disaster protocol early and restore 11kV grid power.`;
-    currentHourBtnBg = currentDisasterConfig.color === '#ef4444' ? '#ef4444' : (currentDisasterConfig.color === '#f59e0b' ? '#f59e0b' : '#38bdf8');
+    currentHourBtnBg = currentDisasterConfig.color === '#ef4444' ? '#ef4444' : (currentDisasterConfig.color === '#f59e0b' ? '#f59e0b' : '#ea580c');
     currentHourBtnColor = currentDisasterConfig.color === '#ef4444' ? '#ffffff' : '#000000';
     currentHourBtnBorder = `1px solid ${currentDisasterConfig.color}`;
   } else if (isCurrentHourManualCut) {
@@ -158,25 +157,12 @@ export default function SandboxPanel({
   }
 
   return (
-    <div className="panel-card sandbox-card" style={{ border: '1px solid rgba(245, 158, 11, 0.4)' }}>
+    <div className="panel-card sandbox-card" style={{ border: '1px solid rgba(153, 27, 27, 0.55)' }}>
       {/* Sandbox Header */}
-      <div className="panel-header" style={{ background: 'rgba(245, 158, 11, 0.08)' }}>
-        <div className="panel-title" style={{ color: '#fbbf24' }}>
-          <Sliders size={16} color="#fbbf24" />
-          <span>Judge &amp; Operator Simulation Sandbox</span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button 
-            type="button"
-            className="btn-secondary"
-            onClick={onResetDemoDefaults}
-            style={{ padding: '4px 10px', fontSize: '11px', gap: 5 }}
-            title="Reset sandbox to full presentation default scenario"
-          >
-            <RotateCcw size={12} />
-            <span>Reset Defaults</span>
-          </button>
+      <div className="panel-header" style={{ background: 'rgba(153, 27, 27, 0.12)' }}>
+        <div className="panel-title" style={{ color: '#dc2626' }}>
+          <Sliders size={16} color="#dc2626" />
+          <span>Simulation Sandbox</span>
         </div>
       </div>
 
@@ -188,7 +174,7 @@ export default function SandboxPanel({
           borderRadius: 'var(--radius-sm)',
           padding: '8px 12px',
           fontSize: '11px',
-          color: '#cbd5e1',
+          color: 'var(--text-secondary)',
           lineHeight: 1.4,
         }}>
           Live interactive microgrid simulator: Trigger manual power cuts on any hour, simulate Odisha disasters, and watch the Max-Min LP and Lexicographic Triage engine re-solve in real-time.
@@ -197,16 +183,17 @@ export default function SandboxPanel({
         {/* CONTROLS SECTION */}
         <div className="control-group">
           {/* 1. MANUAL POWER CUT CONTROLLER (ANY HOUR / LIVE TOGGLE) */}
+          <div className="sandbox-eyebrow">Outage Schedule</div>
           <div className="control-item" style={{
-            background: isCurrentHourOutage ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-            border: isCurrentHourOutage ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
+            background: isCurrentHourOutage ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg-secondary)',
+            border: isCurrentHourOutage ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             padding: '12px',
           }}>
             {/* Live Power Cut Row */}
             <div className="control-label-row" style={{ marginBottom: 8 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
-                <Power size={16} color={isCurrentHourOutage ? (isCurrentHourDisasterLocked ? currentDisasterConfig.color : '#ef4444') : '#10b981'} />
+                <Power size={16} color={isCurrentHourOutage ? (isCurrentHourDisasterLocked ? currentDisasterConfig.color : '#ef4444') : 'var(--energy-green)'} />
                 <span>Manual Power Cut (Grid Outage)</span>
               </span>
 
@@ -215,7 +202,7 @@ export default function SandboxPanel({
                 <span style={{ 
                   fontSize: '11px', 
                   fontWeight: 700, 
-                  color: isCurrentHourOutage ? (isCurrentHourDisasterLocked ? currentDisasterConfig.color : '#f87171') : '#34d399',
+                  color: isCurrentHourOutage ? (isCurrentHourDisasterLocked ? currentDisasterConfig.color : '#f87171') : 'var(--energy-green)',
                   background: isCurrentHourOutage ? (isCurrentHourDisasterLocked ? `${currentDisasterConfig.color}25` : 'rgba(239,68,68,0.18)') : 'rgba(16,185,129,0.15)',
                   padding: '3px 8px',
                   borderRadius: 4,
@@ -251,7 +238,7 @@ export default function SandboxPanel({
             </div>
 
             {/* Subtext info */}
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: 10 }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: 10 }}>
               Click any hour below to toggle power cut ON/OFF arbitrarily across the 24-hour day:
             </div>
 
@@ -269,9 +256,9 @@ export default function SandboxPanel({
                 const isOut = isManualCut || isLocked;
                 const isCur = h === currentHour;
 
-                let btnBg = 'rgba(255,255,255,0.03)';
-                let btnBorder = '1px solid rgba(255,255,255,0.08)';
-                let btnColor = '#94a3b8';
+                let btnBg = 'var(--bg-secondary)';
+                let btnBorder = '1px solid var(--border-subtle)';
+                let btnColor = 'var(--text-secondary)';
                 let btnTitle = `Hour ${h}:00 - Grid Connected (Click to cut power)`;
                 let btnCursor = 'pointer';
                 let btnOpacity = 1;
@@ -291,10 +278,10 @@ export default function SandboxPanel({
                 }
 
                 if (isCur) {
-                  btnBorder = isLocked ? `1.5px solid ${currentDisasterConfig.color}` : '1.5px solid #38bdf8';
+                  btnBorder = isLocked ? `1.5px solid ${currentDisasterConfig.color}` : '1.5px solid #ea580c';
                   if (!isOut) {
-                    btnBg = 'rgba(56, 189, 248, 0.15)';
-                    btnColor = '#38bdf8';
+                    btnBg = 'rgba(255, 133, 0, 0.15)';
+                    btnColor = 'var(--energy-green)';
                   }
                 }
 
@@ -329,7 +316,7 @@ export default function SandboxPanel({
 
             {/* Quick Outage Action Presets */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: '11px' }}>
-              <span style={{ color: '#64748b', fontSize: '10px' }}>Presets:</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Presets:</span>
               <button
                 type="button"
                 className={`btn-ctrl ${(simParams.outage_hours || []).includes(12) && !(isDisasterEnabled && causesOutage) ? 'active' : ''}`}
@@ -351,7 +338,7 @@ export default function SandboxPanel({
               <button
                 type="button"
                 className="btn-ctrl"
-                style={{ fontSize: '10px', padding: '3px 8px', color: '#34d399' }}
+                style={{ fontSize: '10px', padding: '3px 8px', color: 'var(--energy-green)' }}
                 onClick={() => onParamChange({ outage_hours: [] }, true)}
                 title="Clear all manual operator cuts (leaves disaster protocol untouched if active)"
               >
@@ -371,11 +358,11 @@ export default function SandboxPanel({
               )}
 
               {totalManualOutageHoursCount > 0 ? (
-                <span style={{ fontSize: '10px', color: '#fca5a5', marginLeft: 'auto', fontWeight: 600 }}>
+                <span style={{ fontSize: '10px', color: '#dc2626', marginLeft: 'auto', fontWeight: 600 }}>
                   ⚡ {totalManualOutageHoursCount}h Manual Outage
                 </span>
               ) : (
-                <span style={{ fontSize: '10px', color: '#34d399', marginLeft: 'auto', fontWeight: 600 }}>
+                <span style={{ fontSize: '10px', color: 'var(--energy-green)', marginLeft: 'auto', fontWeight: 600 }}>
                   {isDisasterEnabled ? '🚨 Disaster Islanding Active' : '✓ Grid 100% Connected'}
                 </span>
               )}
@@ -383,6 +370,7 @@ export default function SandboxPanel({
           </div>
 
           {/* 2. REALISTIC DISASTER PROTOCOLS */}
+          <div className="sandbox-eyebrow">Disaster Protocol</div>
           <div className="control-item">
             <div className="control-label-row">
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -437,10 +425,10 @@ export default function SandboxPanel({
                 width: '100%',
                 marginTop: '6px',
                 padding: '7px 10px',
-                background: '#090e17',
+                background: '#fffdf7',
                 border: `1px solid ${currentDisasterConfig.color}60`,
                 borderRadius: 'var(--radius-sm)',
-                color: '#f8fafc',
+                color: '#1c1917',
                 fontSize: '12px',
                 fontWeight: 600,
               }}
@@ -453,7 +441,7 @@ export default function SandboxPanel({
               ))}
             </select>
 
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: 4, lineHeight: 1.4 }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: 4, lineHeight: 1.4 }}>
               {currentDisaster.desc}
             </div>
 
@@ -479,7 +467,7 @@ export default function SandboxPanel({
                   </span>
                 </div>
 
-                <div style={{ fontSize: '10.5px', color: '#94a3b8', lineHeight: 1.3 }}>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
                   {causesOutage 
                     ? 'Adjust start/end hours to demonstrate shorter or longer emergency outage/repair window:' 
                     : 'Adjust start/end hours to demonstrate duration of thermal stress and peak AC surge:'}
@@ -487,7 +475,7 @@ export default function SandboxPanel({
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#cbd5e1', marginBottom: 3 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', marginBottom: 3 }}>
                       <span>{causesOutage ? 'Disconnection Start:' : 'Surge Start:'}</span>
                       <b style={{ color: currentDisasterConfig.color, fontFamily: 'monospace' }}>{disasterStart}:00</b>
                     </div>
@@ -508,7 +496,7 @@ export default function SandboxPanel({
                     />
                   </div>
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#cbd5e1', marginBottom: 3 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)', marginBottom: 3 }}>
                       <span>{causesOutage ? 'Re-connection End:' : 'Surge End:'}</span>
                       <b style={{ color: currentDisasterConfig.color, fontFamily: 'monospace' }}>{disasterEnd}:00</b>
                     </div>
@@ -534,6 +522,8 @@ export default function SandboxPanel({
 
             {/* Isolated Building Power Redirection & Manual Selector */}
             {simParams.disaster_type === 'electrical_fire' && (
+              <>
+              <div className="sandbox-eyebrow" style={{ marginTop: 8 }}>Building Isolation</div>
               <div style={{
                 marginTop: 8,
                 background: 'rgba(239, 68, 68, 0.08)',
@@ -545,8 +535,8 @@ export default function SandboxPanel({
                 gap: 6,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Flame size={13} color="#f87171" />
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Flame size={13} color="#dc2626" />
                     <span>Fire Fault Isolation Target:</span>
                   </span>
                   <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.2)', color: '#f87171', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>
@@ -578,25 +568,26 @@ export default function SandboxPanel({
                   ))}
                 </select>
 
-                <div style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: 1.35 }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
                   Main electrical riser isolated for <b>{simParams.isolated_building || 'C-Block (Academic)'}</b> (0 kW). Power redirected to active deficit nodes.
                 </div>
               </div>
+              </>
             )}
           </div>
 
           {/* 3. Daytime vs. Evening Outage Comparison Callout */}
           {outageComparison && (
             <div style={{
-              background: 'rgba(56, 189, 248, 0.05)',
-              border: '1px solid rgba(56, 189, 248, 0.2)',
+              background: 'rgba(234, 88, 12, 0.07)',
+              border: '1px solid rgba(234, 88, 12, 0.3)',
               borderRadius: 'var(--radius-sm)',
               padding: '8px 10px',
               fontSize: '11px',
-              color: '#f8fafc',
+              color: 'var(--text-primary)',
               lineHeight: 1.4,
             }}>
-              <b style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+              <b style={{ color: '#c2410c', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
                 <Info size={12} /> Daytime vs. Night Solar Resilience:
               </b>
               <span>
@@ -626,7 +617,7 @@ export default function SandboxPanel({
               className="custom-range"
               title="Simulates multi-month cycling and calendar degradation; automatically triggers duty tier demotions and power derating."
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#64748b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)' }}>
               <span>Day 0 (82% SoH: Full Duty)</span>
               <span>Day 200 (80% SoH: Backup)</span>
               <span>Day 500 (65% SoH: Low)</span>
@@ -641,7 +632,7 @@ export default function SandboxPanel({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: 'var(--text-secondary)',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -660,7 +651,7 @@ export default function SandboxPanel({
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10, paddingLeft: 4 }}>
                 <div>
                   <div className="control-label-row">
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Solar Irradiance Multiplier</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Solar Irradiance Multiplier</span>
                     <span className="control-val">{simParams.solar_multiplier}x</span>
                   </div>
                   <input 
@@ -673,7 +664,7 @@ export default function SandboxPanel({
 
                 <div>
                   <div className="control-label-row">
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Campus Load Multiplier</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Campus Load Multiplier</span>
                     <span className="control-val">{simParams.load_multiplier}x</span>
                   </div>
                   <input 
@@ -732,11 +723,11 @@ export default function SandboxPanel({
                 <b style={{ color: '#f87171', fontSize: '15px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   Life-Safety System Override Warning
                 </b>
-                <div style={{ color: '#94a3b8', fontSize: '11px' }}>Mandatory Operator Guardrail Verification</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>Mandatory Operator Guardrail Verification</div>
               </div>
             </div>
 
-            <div style={{ fontSize: '12px', lineHeight: 1.55, color: '#cbd5e1', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+            <div style={{ fontSize: '12px', lineHeight: 1.55, color: 'var(--text-secondary)', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
               You are attempting to manually disconnect power to <b style={{ color: '#f87171' }}>{guardrailModalTarget.label}</b>, which is currently classified as <b>Tier-1 Critical Life-Safety</b> infrastructure.
               <br/><br/>
               <span style={{ color: '#fca5a5' }}>

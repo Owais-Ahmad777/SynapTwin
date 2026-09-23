@@ -220,19 +220,19 @@ export default function TimelineController({
       {/* Section C: Grid Recovery Status Banner */}
       {!isCurrentOutage && outageHours.includes((currentHour - 1 + 24) % 24) && (
         <div style={{
-          marginTop: 10,
-          padding: '6px 12px',
-          background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.15), rgba(6, 182, 212, 0.1))',
-          border: '1px solid rgba(16, 185, 129, 0.4)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '11px',
-          color: '#34d399',
+          marginTop: 8,
+          padding: '3px 12px',
+          background: 'rgba(47, 191, 113, 0.1)',
+          borderTop: '1px solid rgba(47, 191, 113, 0.35)',
+          borderBottom: '1px solid rgba(47, 191, 113, 0.35)',
+          fontSize: '10.5px',
+          color: 'var(--ok-green)',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
           fontWeight: 600,
         }}>
-          <CheckCircle2 size={14} color="#34d399" />
+          <CheckCircle2 size={13} color="var(--ok-green)" />
           <span>⚡ Grid restored &mdash; critical loads stable, restoring remaining tiers (Tier 3 dormitories &amp; Tier 4 flexible loads).</span>
         </div>
       )}

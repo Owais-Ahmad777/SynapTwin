@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, Sun, IndianRupee, Leaf, Battery, 
-  Info, RotateCcw 
+import {
+  TrendingUp, Sun, IndianRupee, Leaf, Battery,
+  Info
 } from 'lucide-react';
 import {
   ResponsiveContainer, ComposedChart, Area, Bar,
@@ -42,13 +42,6 @@ export default function MultiYearTrends() {
       });
   }, [years, solarDegradation, tariffEscalation, includeBatteryAging]);
 
-  const handleResetAssumptions = () => {
-    setYears(5);
-    setSolarDegradation(0.5);
-    setTariffEscalation(3.5);
-    setIncludeBatteryAging(true);
-  };
-
   const totals = projectionData?.totals;
   const yearly = projectionData?.yearly_summary || [];
 
@@ -56,8 +49,8 @@ export default function MultiYearTrends() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* 1. Top Assumption Control Panel & KPIs */}
       <div style={{
-        background: 'rgba(15, 23, 42, 0.75)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-subtle)',
         borderRadius: 14,
         padding: '20px 24px',
         display: 'flex',
@@ -67,14 +60,14 @@ export default function MultiYearTrends() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <TrendingUp size={18} color="#38bdf8" />
-              <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#f8fafc' }}>
+              <TrendingUp size={18} color="var(--energy-green)" />
+              <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
                 Multi-Year Strategic Energy &amp; Financial Projections ({years} Years)
               </h2>
               <span style={{
                 background: 'rgba(245, 158, 11, 0.15)',
                 border: '1px solid rgba(245, 158, 11, 0.4)',
-                color: '#fbbf24',
+                color: 'var(--battery-cyan)',
                 fontSize: '10.5px',
                 fontWeight: 700,
                 padding: '2px 8px',
@@ -84,21 +77,12 @@ export default function MultiYearTrends() {
                 Synthetic Benchmark
               </span>
             </div>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 0 0' }}>
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
               Extending the 30-day weather variability engine across multi-year horizon with silicon PV degradation and TPCODL tariff escalation.
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={handleResetAssumptions}
-            className="btn-secondary"
-            style={{ fontSize: '11px', padding: '6px 12px' }}
-            title="Reset projection parameters to documented industry defaults"
-          >
-            <RotateCcw size={13} />
-            <span>Reset Defaults</span>
-          </button>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Industry-standard assumptions</span>
         </div>
 
         {/* Interactive Assumption Sliders */}
@@ -106,16 +90,16 @@ export default function MultiYearTrends() {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 16,
-          background: 'rgba(0, 0, 0, 0.3)',
+          background: 'var(--bg-secondary)',
           padding: '14px 18px',
           borderRadius: 10,
-          border: '1px solid rgba(255, 255, 255, 0.06)',
+          border: '1px solid var(--border-subtle)',
         }}>
           {/* Horizon Slider */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: 6 }}>
-              <span style={{ color: '#94a3b8' }}>Projection Horizon:</span>
-              <b style={{ color: '#38bdf8' }}>{years} Years</b>
+              <span style={{ color: 'var(--text-secondary)' }}>Projection Horizon:</span>
+              <b style={{ color: 'var(--energy-green)' }}>{years} Years</b>
             </div>
             <input 
               type="range"
@@ -124,15 +108,15 @@ export default function MultiYearTrends() {
               step={1}
               value={years}
               onChange={(e) => setYears(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#38bdf8' }}
+              style={{ width: '100%', accentColor: 'var(--energy-green)' }}
             />
           </div>
 
           {/* PV Degradation Rate */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: 6 }}>
-              <span style={{ color: '#94a3b8' }}>PV Degradation / Year:</span>
-              <b style={{ color: '#fbbf24' }}>{solarDegradation}% / yr</b>
+              <span style={{ color: 'var(--text-secondary)' }}>PV Degradation / Year:</span>
+              <b style={{ color: 'var(--battery-cyan)' }}>{solarDegradation}% / yr</b>
             </div>
             <input 
               type="range"
@@ -141,15 +125,15 @@ export default function MultiYearTrends() {
               step={0.1}
               value={solarDegradation}
               onChange={(e) => setSolarDegradation(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#fbbf24' }}
+              style={{ width: '100%', accentColor: 'var(--battery-cyan)' }}
             />
           </div>
 
           {/* TPCODL Tariff Escalation Rate */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px', marginBottom: 6 }}>
-              <span style={{ color: '#94a3b8' }}>Tariff Escalation / Year:</span>
-              <b style={{ color: '#34d399' }}>+{tariffEscalation}% / yr</b>
+              <span style={{ color: 'var(--text-secondary)' }}>Tariff Escalation / Year:</span>
+              <b style={{ color: 'var(--energy-green)' }}>+{tariffEscalation}% / yr</b>
             </div>
             <input 
               type="range"
@@ -158,19 +142,19 @@ export default function MultiYearTrends() {
               step={0.5}
               value={tariffEscalation}
               onChange={(e) => setTariffEscalation(Number(e.target.value))}
-              style={{ width: '100%', accentColor: '#34d399' }}
+              style={{ width: '100%', accentColor: 'var(--energy-green)' }}
             />
           </div>
 
           {/* Battery Aging Toggle */}
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <span style={{ fontSize: '11.5px', color: '#94a3b8', marginBottom: 6 }}>Battery Aging Model:</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '12px', color: '#e2e8f0' }}>
+            <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginBottom: 6 }}>Battery Aging Model:</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)', fontWeight: 600 }}>
               <input 
                 type="checkbox"
                 checked={includeBatteryAging}
                 onChange={(e) => setIncludeBatteryAging(e.target.checked)}
-                style={{ accentColor: '#06b6d4', width: 16, height: 16 }}
+                style={{ accentColor: '#ea580c', width: 16, height: 16 }}
               />
               <span>Empirical NMC Li-ion fade</span>
             </label>
@@ -184,54 +168,54 @@ export default function MultiYearTrends() {
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: 14,
           }}>
-            <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <IndianRupee size={13} color="#34d399" />
+            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <IndianRupee size={13} color="var(--energy-green)" />
                 <span>Cumulative {years}-Year Savings</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#34d399', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
                 ₹{totals.cumulative_savings_lakhs} <span style={{ fontSize: '13px' }}>Lakhs</span>
               </div>
-              <div style={{ fontSize: '10px', color: '#6ee7b7', marginTop: 2 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
                 vs. Uncoordinated Campus Baseline
               </div>
             </div>
 
-            <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Sun size={13} color="#38bdf8" />
+            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Sun size={13} color="var(--energy-green)" />
                 <span>Total Clean Solar Generation</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#38bdf8', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
                 {totals.cumulative_solar_mwh} <span style={{ fontSize: '13px' }}>MWh</span>
               </div>
-              <div style={{ fontSize: '10px', color: '#7dd3fc', marginTop: 2 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
                 16 Rooftops with {solarDegradation}%/yr fade
               </div>
             </div>
 
-            <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Leaf size={13} color="#4ade80" />
+            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Leaf size={13} color="var(--energy-green)" />
                 <span>Carbon Emissions Abated</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#4ade80', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
                 {totals.cumulative_co2_abated_tonnes} <span style={{ fontSize: '13px' }}>Tonnes</span>
               </div>
-              <div style={{ fontSize: '10px', color: '#86efac', marginTop: 2 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
                 0.82 kg CO₂/kWh Indian Grid Factor
               </div>
             </div>
 
-            <div style={{ background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Battery size={13} color="#22d3ee" />
+            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Battery size={13} color="var(--battery-cyan)" />
                 <span>Year {years} Battery Health (SoH)</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#22d3ee', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--battery-cyan)', marginTop: 4 }}>
                 {totals.final_battery_soh_pct}% <span style={{ fontSize: '12px' }}>({totals.final_battery_duty_tier})</span>
               </div>
-              <div style={{ fontSize: '10px', color: '#a5f3fc', marginTop: 2 }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
                 Second-Life Degradation Trajectory
               </div>
             </div>
@@ -240,15 +224,15 @@ export default function MultiYearTrends() {
       </div>
 
       {/* 2. Chart View Tab Switcher */}
-      <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 10 }}>
         <button
           type="button"
           className={`btn-secondary ${activeTab === 'financial' ? 'active' : ''}`}
           onClick={() => setActiveTab('financial')}
           style={{
-            borderColor: activeTab === 'financial' ? '#34d399' : 'rgba(255, 255, 255, 0.15)',
-            color: activeTab === 'financial' ? '#34d399' : '#94a3b8',
-            background: activeTab === 'financial' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+            borderColor: activeTab === 'financial' ? '#ea580c' : 'var(--border-subtle)',
+            color: activeTab === 'financial' ? 'var(--energy-green)' : 'var(--text-muted)',
+            background: activeTab === 'financial' ? 'rgba(255, 133, 0, 0.15)' : 'transparent',
             padding: '8px 16px',
             fontSize: '12px',
           }}
@@ -262,9 +246,9 @@ export default function MultiYearTrends() {
           className={`btn-secondary ${activeTab === 'energy' ? 'active' : ''}`}
           onClick={() => setActiveTab('energy')}
           style={{
-            borderColor: activeTab === 'energy' ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)',
-            color: activeTab === 'energy' ? '#38bdf8' : '#94a3b8',
-            background: activeTab === 'energy' ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+            borderColor: activeTab === 'energy' ? '#ea580c' : 'var(--border-subtle)',
+            color: activeTab === 'energy' ? 'var(--energy-green)' : 'var(--text-muted)',
+            background: activeTab === 'energy' ? 'rgba(255, 133, 0, 0.15)' : 'transparent',
             padding: '8px 16px',
             fontSize: '12px',
           }}
@@ -278,9 +262,9 @@ export default function MultiYearTrends() {
           className={`btn-secondary ${activeTab === 'battery' ? 'active' : ''}`}
           onClick={() => setActiveTab('battery')}
           style={{
-            borderColor: activeTab === 'battery' ? '#22d3ee' : 'rgba(255, 255, 255, 0.15)',
-            color: activeTab === 'battery' ? '#22d3ee' : '#94a3b8',
-            background: activeTab === 'battery' ? 'rgba(6, 182, 212, 0.15)' : 'transparent',
+            borderColor: activeTab === 'battery' ? '#ea580c' : 'var(--border-subtle)',
+            color: activeTab === 'battery' ? 'var(--energy-green)' : 'var(--text-muted)',
+            background: activeTab === 'battery' ? 'rgba(255, 133, 0, 0.15)' : 'transparent',
             padding: '8px 16px',
             fontSize: '12px',
           }}
@@ -292,14 +276,14 @@ export default function MultiYearTrends() {
 
       {/* 3. Main Chart Panel */}
       <div style={{
-        background: 'rgba(15, 23, 42, 0.75)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-subtle)',
         borderRadius: 14,
         padding: '24px',
         position: 'relative',
       }}>
         {loading ? (
-          <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+          <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--energy-green)' }}>
             Simulating {years}-year multi-year trajectory...
           </div>
         ) : (
@@ -308,10 +292,10 @@ export default function MultiYearTrends() {
             {activeTab === 'financial' && (
               <div>
                 <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#34d399' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--energy-green)' }}>
                     Annual Cost Savings &amp; Utility Tariff Inflation Benchmark
                   </h3>
-                  <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
                     Demonstrating expanding savings margin as TPCODL commercial tariffs escalate (+{tariffEscalation}%/yr) against fixed solar PV investment.
                   </span>
                 </div>
@@ -341,10 +325,10 @@ export default function MultiYearTrends() {
             {activeTab === 'energy' && (
               <div>
                 <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#38bdf8' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--energy-green)' }}>
                     Annual Solar PV Harvest &amp; Avoided Carbon Emissions
                   </h3>
-                  <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
                     Modeling ~{solarDegradation}%/year PV efficiency decline and 0.82 kg CO₂/kWh thermal grid abatement.
                   </span>
                 </div>
@@ -371,10 +355,10 @@ export default function MultiYearTrends() {
             {activeTab === 'battery' && (
               <div>
                 <div style={{ marginBottom: 16 }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#22d3ee' }}>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--battery-cyan)' }}>
                     Second-Life EV Battery SoH Trajectory &amp; Max-Min Fairness Stability
                   </h3>
-                  <span style={{ fontSize: '11.5px', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
                     Simulating empirical Li-ion capacity fade across duty tiers (FULL_DUTY &rarr; BACKUP_ONLY &rarr; SECOND_LIFE_LOW).
                   </span>
                 </div>
@@ -403,19 +387,19 @@ export default function MultiYearTrends() {
 
       {/* 4. Tabular Summary of Yearly Benchmark Data */}
       <div style={{
-        background: 'rgba(15, 23, 42, 0.75)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-subtle)',
         borderRadius: 14,
         padding: '20px 24px',
         overflowX: 'auto',
       }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0', color: '#f8fafc' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0', color: 'var(--text-primary)' }}>
           Year-by-Year Aggregated Projection Breakdown
         </h3>
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
           <thead>
-            <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.12)', color: '#94a3b8' }}>
+            <tr style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
               <th style={{ padding: '8px 12px' }}>Horizon</th>
               <th style={{ padding: '8px 12px' }}>Solar Harvest (MWh)</th>
               <th style={{ padding: '8px 12px' }}>Annual Savings (₹ Lakhs)</th>
@@ -429,17 +413,17 @@ export default function MultiYearTrends() {
           </thead>
           <tbody>
             {yearly.map((row) => (
-              <tr key={row.year} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)', color: '#f8fafc' }}>
-                <td style={{ padding: '10px 12px', fontWeight: 700, color: '#38bdf8' }}>{row.year_label}</td>
+              <tr key={row.year} style={{ borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}>
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: 'var(--energy-green)' }}>{row.year_label}</td>
                 <td style={{ padding: '10px 12px' }}>{row.solar_mwh} MWh</td>
-                <td style={{ padding: '10px 12px', color: '#34d399', fontWeight: 700 }}>₹{row.annual_savings_lakhs} L</td>
-                <td style={{ padding: '10px 12px', color: '#6ee7b7' }}>₹{row.cumulative_savings_lakhs} L</td>
-                <td style={{ padding: '10px 12px', color: '#4ade80' }}>{row.co2_abated_tonnes} t</td>
-                <td style={{ padding: '10px 12px', color: '#22d3ee', fontWeight: 600 }}>{row.battery_soh_pct}%</td>
+                <td style={{ padding: '10px 12px', color: 'var(--energy-green)', fontWeight: 700 }}>₹{row.annual_savings_lakhs} L</td>
+                <td style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>₹{row.cumulative_savings_lakhs} L</td>
+                <td style={{ padding: '10px 12px', color: 'var(--energy-green)' }}>{row.co2_abated_tonnes} t</td>
+                <td style={{ padding: '10px 12px', color: 'var(--battery-cyan)', fontWeight: 600 }}>{row.battery_soh_pct}%</td>
                 <td style={{ padding: '10px 12px' }}>
                   <span style={{
-                    background: row.battery_duty_tier === 'FULL_DUTY' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                    color: row.battery_duty_tier === 'FULL_DUTY' ? '#34d399' : '#fbbf24',
+                    background: row.battery_duty_tier === 'FULL_DUTY' ? 'rgba(255, 133, 0, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    color: row.battery_duty_tier === 'FULL_DUTY' ? 'var(--energy-green)' : 'var(--battery-cyan)',
                     padding: '2px 6px',
                     borderRadius: 4,
                     fontSize: '10.5px',
@@ -448,8 +432,8 @@ export default function MultiYearTrends() {
                     {row.battery_duty_tier}
                   </span>
                 </td>
-                <td style={{ padding: '10px 12px', color: '#fbbf24' }}>₹{row.effective_tariff_inr}/kWh</td>
-                <td style={{ padding: '10px 12px', color: '#c084fc' }}>{row.fairness_pct}%</td>
+                <td style={{ padding: '10px 12px', color: 'var(--battery-cyan)' }}>₹{row.effective_tariff_inr}/kWh</td>
+                <td style={{ padding: '10px 12px', color: 'var(--energy-green)' }}>{row.fairness_pct}%</td>
               </tr>
             ))}
           </tbody>
@@ -465,15 +449,15 @@ export default function MultiYearTrends() {
         display: 'flex',
         alignItems: 'flex-start',
         gap: 12,
-        color: '#fbbf24',
+        color: 'var(--battery-cyan)',
         fontSize: '11.5px',
         lineHeight: 1.5,
       }}>
-        <Info size={18} color="#fbbf24" style={{ flexShrink: 0, marginTop: 1 }} />
+        <Info size={18} color="var(--battery-cyan)" style={{ flexShrink: 0, marginTop: 1 }} />
         <div>
           <b>PROJECTED / SYNTHETIC BENCHMARK DISCLAIMER:</b>{' '}
           {projectionData?.disclaimer || MULTIYEAR_DISCLAIMER_TEXT}
-          <div style={{ marginTop: 4, color: '#fef08a', fontSize: '10.5px' }}>
+          <div style={{ marginTop: 4, color: 'var(--text-secondary)', fontSize: '10.5px' }}>
             &bull; <b>PV Degradation:</b> ~{solarDegradation}%/yr silicon solar cell efficiency loss (NREL/IEC 61215). &bull; <b>Tariff Inflation:</b> +{tariffEscalation}%/yr planning escalation assumption. &bull; <b>Battery:</b> Empirical NMC degradation from <code>optimizer/battery_health.py</code>.
           </div>
         </div>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
-import KPIBanner from './components/KPIBanner';
 import CampusMap from './components/CampusMap';
 import TimelineController from './components/TimelineController';
 import EnergyCharts from './components/EnergyCharts';
@@ -15,10 +14,73 @@ import AuditModal from './components/AuditModal';
 import EnergyFlowDiagram from './components/EnergyFlowDiagram';
 import ComparisonModal from './components/ComparisonModal';
 import HistoryView from './components/HistoryView';
+import MultiYearTrends from './components/MultiYearTrends';
+import Sidebar from './components/Sidebar';
+import InsightDrawer from './components/InsightDrawer';
+import HomePage from './pages/HomePage';
+import DriveEVPage from './pages/DriveEVPage';
+import DisasterPage from './pages/DisasterPage';
+import ComparePage from './pages/ComparePage';
+import ContentAuditPage from './pages/ContentAuditPage';
+import CertificatePage from './pages/CertificatePage';
+import PitchPage from './pages/PitchPage';
+import SettingsPage from './pages/SettingsPage';
+import PlayDayFab from './components/PlayDayFab';
+import BuildingHistoryPage from './pages/BuildingHistoryPage';
+import BuildingMonthlyTrend from './components/BuildingMonthlyTrend';
+import BuildingProjectionPanel from './components/BuildingProjectionPanel';
+import BuildingCertificate from './components/BuildingCertificate';
+import BuildingCompare from './components/BuildingCompare';
+
+const VALID_PAGES = ['home', 'driveev', 'disaster', 'compare', 'audit', 'certificate', 'pitch', 'history30', 'future5y', 'settings'];
+
+// UI-ONLY: supervisor building-persona id -> canonical simulation block name
+// (same strings the backend already emits in hourData.blocks[].name).
+const ROLE_BUILDING_MAP = {
+  hostel_a: 'ITER Boys Hostel 1',
+  hostel_b: 'ITER Boys Hostel 7',
+  academic: 'C-Block (Academic)',
+  cafeteria: 'ITER Cafeteria & Dining',
+  central_library: 'Central Library',
+  admin_block: 'ITER Administrative Block',
+  auditorium: 'Bansuri Guru Auditorium',
+  d_block: 'D-Block',
+  a_block: 'A-Block',
+  hostel_2: 'ITER Boys Hostel 2',
+  sports: 'S-Block (Sports Complex)',
+  f_block: 'F-Block',
+  g_block: 'G-Block',
+  data_science: 'Centre for Data Science',
+  research: 'Research & Innovation Wing',
+};
+
+// UI-ONLY lookup over already-fetched simulation blocks (no backend change).
+function findBlock(blocks, name) {
+  if (!blocks || !name) return null;
+  const exact = blocks.find((b) => b.name === name);
+  if (exact) return exact;
+  const t = name.toLowerCase();
+  return blocks.find((b) => {
+    const n = (b.name || '').toLowerCase();
+    return n.includes(t) || t.includes(n);
+  }) || null;
+}
+
+function getInitialPage() {
+  try {
+    const p = new URLSearchParams(window.location.search).get('page');
+    if (p && VALID_PAGES.includes(p)) return p;
+    if (window.location.hash) {
+      const h = window.location.hash.replace('#', '');
+      if (VALID_PAGES.includes(h)) return h;
+    }
+  } catch (e) { /* ignore */ }
+  return 'home';
+}
 
 export default function App() {
   const [isHistoryView] = useState(() => {
-    return window.location.search.includes('view=history') || 
+    return window.location.search.includes('view=history') ||
            window.location.pathname.startsWith('/history') ||
            window.location.hash.includes('history');
   });
@@ -34,6 +96,32 @@ export default function App() {
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // UI-ONLY shell state (navigation / drawers / profiles). No backend impact.
+  const [activePage, setActivePage] = useState(getInitialPage);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [uiProfile, setUiProfile] = useState('admin');
+  const [insight, setInsight] = useState(null); // 'solar' | 'demand' | 'fairness' | 'roi' | null
+  const [theme, setTheme] = useState('dark'); // 'dark' | 'light' — UI chrome only
+
+  // UI-ONLY theme switch (CSS variables). No data or backend impact.
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) { /* ignore */ }
+  }, [theme]);
+
+  const handleNavigate = (page) => {
+    if (!VALID_PAGES.includes(page)) return;
+    setActivePage(page);
+    setInsight(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('page', page);
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) { /* ignore */ }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Simulation Parameters for the Interactive Sandbox (Full Presentation Scenario)
   const DEFAULT_SIM_PARAMS = {
@@ -183,9 +271,9 @@ export default function App() {
       const updated = { ...prev, ...partialParams };
       if (autoRun) {
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-        const isDiscreteToggle = 'is_disaster_active' in partialParams || 
-                                 'disaster_type' in partialParams || 
-                                 'isolated_building' in partialParams || 
+        const isDiscreteToggle = 'is_disaster_active' in partialParams ||
+                                 'disaster_type' in partialParams ||
+                                 'isolated_building' in partialParams ||
                                  'outage_hours' in partialParams ||
                                  'disaster_start_hour' in partialParams ||
                                  'disaster_end_hour' in partialParams ||
@@ -233,159 +321,354 @@ export default function App() {
   } : null;
 
   const isCustom = (
-    simParams.solar_multiplier !== 1.0 || 
-    simParams.load_multiplier !== 1.0 || 
+    simParams.solar_multiplier !== 1.0 ||
+    simParams.load_multiplier !== 1.0 ||
     (simParams.outage_hours && simParams.outage_hours.length > 0 && !simParams.outage_hours.includes(19)) ||
     simParams.disaster_type !== 'monsoon_waterlogging'
   );
+
+  // UI-ONLY per-building mode: supervisor + a selected building persona shows
+  // that building's site; admin keeps the unchanged campus site.
+  const isBuildingMode = uiProfile === 'supervisor' && currentRole !== 'admin' && Boolean(ROLE_BUILDING_MAP[currentRole]);
+  const buildingName = isBuildingMode ? ROLE_BUILDING_MAP[currentRole] : null;
+  const buildingBlock = isBuildingMode ? findBlock(hourData?.blocks, buildingName) : null;
+
+  // UI-ONLY daily sums + 24h series aggregated from already-fetched hourly
+  // simulation blocks (same summation the KPI banner already does for campus).
+  let buildingDaily = { solar: 0, load: 0, battery: 0, grid: 0 };
+  const buildingHourly24 = [];
+  if (isBuildingMode && simData?.hourly) {
+    simData.hourly.forEach((h) => {
+      const b = findBlock(h.blocks, buildingName);
+      const load = b?.load_kw || 0;
+      const solar = b?.solar_kw || 0;
+      const alloc = b?.allocated_kw || 0;
+      buildingDaily.load += load;
+      buildingDaily.solar += solar;
+      buildingDaily.battery += alloc;
+      buildingDaily.grid += Math.max(0, load - solar - alloc);
+      buildingHourly24.push({
+        hour: h.hour,
+        load: Number(load.toFixed(1)),
+        solar: Number(solar.toFixed(1)),
+        battery: Number(alloc.toFixed(1)),
+      });
+    });
+    buildingDaily = {
+      solar: Number(buildingDaily.solar.toFixed(1)),
+      load: Number(buildingDaily.load.toFixed(1)),
+      battery: Number(buildingDaily.battery.toFixed(1)),
+      grid: Number(buildingDaily.grid.toFixed(1)),
+    };
+  }
+
+  // UI-ONLY: per-building site has no DriveEV/Disaster pages (decision panel
+  // lives on its homepage instead); fall back to home if addressed directly.
+  const effectivePage = (isBuildingMode && ['driveev', 'disaster', 'settings', 'pitch'].includes(activePage))
+    ? 'home'
+    : activePage;
 
   if (isHistoryView) {
     return <HistoryView />;
   }
 
-  return (
-    <div className="app-container">
-      {/* 1. Global Header with Anchored Alert Center */}
-      <Header 
-        currentHour={currentHour}
-        hourData={hourData}
-        simParams={simParams}
-        isOutage={hourData?.is_outage}
-        isDisasterActive={Boolean(simParams.is_disaster_active && simParams.disaster_type && simParams.disaster_type !== 'none')}
-        disasterType={simParams.disaster_type}
-        currentMode={hourData?.mode}
-        batteryHealth={simData?.battery_health}
-        impactMetrics={simData?.impact_metrics}
-        currentRole={currentRole}
-        onRoleChange={setCurrentRole}
-        onOpenPitch={() => setIsPitchOpen(true)}
-        onOpenAudit={() => setIsAuditOpen(true)}
-        onOpenCompare={() => setIsCompareOpen(true)}
-        onResetDemoDefaults={handleResetDemoDefaults}
-      />
+  const modeLabel = hourData?.mode === 'DISASTER_TRIAGE' ? 'DISASTER TRIAGE' : 'ROUTINE FAIRNESS';
+  const finDaily = simData?.impact_metrics?.daily_inr_saved || simData?.financial_metrics?.daily_inr_saved || 21262;
+  const finMonthly = simData?.impact_metrics?.monthly_inr_saved || simData?.financial_metrics?.monthly_inr_saved || 637860;
+  const finAnnual = simData?.impact_metrics?.annual_inr_saved || simData?.financial_metrics?.annual_inr_saved || 7760630;
 
-      {/* 2. Main Dashboard Content */}
-      <main className="main-content">
-        {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '40px 0' }}>
-            <div className="kpi-row">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="kpi-card skeleton-card" style={{ height: 100 }}></div>
-              ))}
+  const insightMeta = {
+    solar: { title: "Today's Solar Forecast vs Actual", sub: 'Rooftop Solar PV • live Open-Meteo telemetry (unchanged graph)' },
+    demand: { title: 'Demand and Forecast', sub: 'Campus demand vs 1h-lookahead prediction ±3.8% MAPE (unchanged graph)' },
+    fairness: { title: 'Max-Min Fairness — Full Table', sub: 'Building allocation & satisfaction matrix (unchanged data)' },
+    roi: { title: 'Financial ROI (ToU) — Detail', sub: 'TPCODL commercial ToU arbitrage (unchanged numbers)' },
+  };
+
+  const renderPage = () => {
+    if (loading) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '40px 0' }}>
+          <div className="kpi-row">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="kpi-card skeleton-card" style={{ height: 100 }}></div>
+            ))}
+          </div>
+          <div style={{ height: 120 }} className="panel-card skeleton-card"></div>
+          <div className="grid-2col">
+            <div style={{ height: 480 }} className="panel-card skeleton-card"></div>
+            <div style={{ height: 480 }} className="panel-card skeleton-card"></div>
+          </div>
+        </div>
+      );
+    }
+
+    switch (effectivePage) {
+      case 'driveev':
+        return (
+          <DriveEVPage
+            simData={simData}
+            currentHour={currentHour}
+            hourData={hourData}
+            trajectoryData={trajectoryData}
+            demandAnalytics={simData?.demand_analytics}
+            daysInService={simParams.days_in_service}
+            currentRole={currentRole}
+          />
+        );
+      case 'disaster':
+        return (
+          <DisasterPage
+            simParams={simParams}
+            onParamChange={handleParamChange}
+            onRunSimulation={() => triggerSimulationRun(simParams)}
+            onResetDemoDefaults={handleResetDemoDefaults}
+            isRunning={isRunning}
+            simData={simData}
+            currentHour={currentHour}
+            hourData={hourData}
+          />
+        );
+      case 'compare':
+        return isBuildingMode ? (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">PER-BUILDING • IMPACT SHARE</div>
+              <h2 className="st-page-title">Compare — {buildingName}</h2>
+              <p className="st-page-sub">This building against campus totals.</p>
             </div>
-            <div style={{ height: 120 }} className="panel-card skeleton-card"></div>
-            <div className="grid-2col">
-              <div style={{ height: 480 }} className="panel-card skeleton-card"></div>
-              <div style={{ height: 480 }} className="panel-card skeleton-card"></div>
-            </div>
+            <BuildingCompare buildingName={buildingName} />
           </div>
         ) : (
-          <>
-            {/* KPI Banner */}
-            <KPIBanner 
-              hourData={hourData}
-              impactMetrics={simData?.impact_metrics}
-              batteryHealth={simData?.battery_health}
-              isDisasterActive={Boolean(simParams.is_disaster_active && simParams.disaster_type && simParams.disaster_type !== 'none')}
-              disasterType={simParams.disaster_type}
-              isCustomScenario={isCustom}
-              onOpenFairnessModal={() => setIsFairnessOpen(true)}
-            />
-
-            {/* Timeline Controller with Live Manual Power Cut Button */}
-            <TimelineController 
-              currentHour={currentHour}
-              onHourChange={setCurrentHour}
-              outageHours={simParams.outage_hours || []}
-              hazardHour={simParams.is_disaster_active ? simParams.hazard_hour : null}
-              onToggleHourOutage={handleToggleHourOutage}
-              isDisasterActive={isDisasterActive}
-              disasterType={simParams.disaster_type}
-              disasterStart={simParams.disaster_start_hour ?? simParams.cyclone_start_hour ?? 12}
-              disasterEnd={simParams.disaster_end_hour ?? simParams.cyclone_end_hour ?? 22}
-              cycloneStart={simParams.cyclone_start_hour ?? 12}
-              cycloneEnd={simParams.cyclone_end_hour ?? 22}
-              onEndDisaster={() => handleParamChange({ is_disaster_active: false }, true)}
-            />
-
-            {/* Main 2-Column Responsive Dashboard Layout */}
-            <div className="grid-2col">
-              {/* Left Column: Campus Spatial Map (Compact 240px) -> driEV Fleet Panel -> Microgrid Energy Analytics */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* 1. Compact 16-Building Campus Map */}
-                <CampusMap 
-                  geoData={geoData}
-                  hourData={hourData}
-                  currentHour={currentHour}
-                  currentRole={currentRole}
-                  onSelectBlock={(bName) => console.log('Selected block:', bName)}
-                />
-
-                {/* 2. driEV Smart Scooter Fleet & Solar Soak (Directly Below Map) */}
-                <EVFleetPanel 
-                  drievSummary={simData?.driev_fleet_summary}
-                  hourlyData={simData?.hourly}
-                  currentHour={currentHour}
-                  hourData={hourData}
-                />
-
-                {/* 3. Real-Time Energy Flow Visualization (Section D) */}
-                <EnergyFlowDiagram 
-                  hourData={hourData}
-                  currentHour={currentHour}
-                />
-
-                {/* 4. Microgrid Power Flow & Energy Analytics */}
-                <EnergyCharts 
-                  hourlyData={simData?.hourly}
-                  currentHour={currentHour}
-                  hourData={hourData}
-                  trajectoryData={trajectoryData}
-                  demandAnalytics={simData?.demand_analytics}
-                  daysInService={simParams.days_in_service}
-                  currentRole={currentRole}
-                />
-              </div>
-
-              {/* Right Column: Sandbox (Top) -> Explainability -> Solar Forecast -> Privacy Vault */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {/* 1. Judge & Operator Simulation Sandbox (Top of Right Column) */}
-                <SandboxPanel 
-                  simParams={simParams}
-                  onParamChange={handleParamChange}
-                  onRunSimulation={() => triggerSimulationRun(simParams)}
-                  onResetDemoDefaults={handleResetDemoDefaults}
-                  isRunning={isRunning}
-                  batteryHealth={simData?.battery_health}
-                  outageComparison={simData?.outage_comparison}
-                  currentHour={currentHour}
-                />
-
-                {/* 2. Decision Explainability & Priority Triage */}
-                <ExplainabilityPanel 
-                  hourData={hourData}
-                />
-
-                {/* 3. Next-Day Solar Forecast Panel */}
-                <SolarForecastPanel 
-                  solarForecast={simData?.solar_forecast}
-                />
-
-                {/* 4. Cryptographic Privacy Vault & Role Boundaries */}
-                <PrivacyVault 
-                  currentRole={currentRole}
-                  currentHour={currentHour}
-                  simData={simData}
-                />
-              </div>
+          <ComparePage simData={simData} />
+        );
+      case 'audit':
+        return <ContentAuditPage simData={simData} />;
+      case 'certificate':
+        return isBuildingMode ? (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">PER-BUILDING • COMPLIANCE RECORD</div>
+              <h2 className="st-page-title">Certificate — {buildingName}</h2>
+              <p className="st-page-sub">Per-building financial and sustainability figures.</p>
             </div>
-          </>
-        )}
-      </main>
+            <BuildingCertificate buildingName={buildingName} />
+          </div>
+        ) : (
+          <CertificatePage simData={simData} />
+        );
+      case 'pitch':
+        return <PitchPage simData={simData} />;
+      case 'history30':
+        return isBuildingMode ? (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">PER-BUILDING • LIVE TELEMETRY</div>
+              <h2 className="st-page-title">30-Day History — {buildingName}</h2>
+              <p className="st-page-sub">Per-building information only.</p>
+            </div>
+            <BuildingMonthlyTrend buildingName={buildingName} />
+          </div>
+        ) : (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">Live Trends</div>
+              <h2 className="st-page-title">30-Day History</h2>
+            </div>
+            <HistoryView hideMultiyearToggle minimal />
+          </div>
+        );
+      case 'future5y':
+        return isBuildingMode ? (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">PER-BUILDING • LIVE TELEMETRY</div>
+              <h2 className="st-page-title">5-Year History — {buildingName}</h2>
+              <p className="st-page-sub">Per-building information only.</p>
+            </div>
+            <BuildingProjectionPanel buildingName={buildingName} />
+          </div>
+        ) : (
+          <div className="st-page">
+            <div className="st-page-head">
+              <div className="st-eyebrow">Strategic Outlook</div>
+              <h2 className="st-page-title">5-Year History</h2>
+              <p className="st-page-sub">Long-horizon financial and energy outlook.</p>
+            </div>
+            <MultiYearTrends />
+          </div>
+        );
+      case 'settings':
+        return (
+          <SettingsPage
+            currentRole={currentRole}
+            currentHour={currentHour}
+            simData={simData}
+          />
+        );
+      case 'home':
+      default:
+        return (
+          <HomePage
+            geoData={geoData}
+            hourData={hourData}
+            simData={simData}
+            simParams={simParams}
+            trajectoryData={trajectoryData}
+            currentHour={currentHour}
+            currentRole={currentRole}
+            isDisasterActive={isDisasterActive}
+            onHourChange={setCurrentHour}
+            onToggleHourOutage={handleToggleHourOutage}
+            onEndDisaster={() => handleParamChange({ is_disaster_active: false }, true)}
+            onOpenFairness={() => setIsFairnessOpen(true)}
+            onOpenInsight={(id) => setInsight(id)}
+            buildingMode={isBuildingMode}
+            buildingName={buildingName}
+            buildingBlock={buildingBlock}
+            buildingDaily={buildingDaily}
+            buildingHourly24={buildingHourly24}
+          />
+        );
+    }
+  };
 
-      {/* 3. Pitch Slide Deck Modal */}
+  return (
+    <div className="app-container">
+      <div className={`st-shell ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
+        <Sidebar
+          activePage={effectivePage}
+          onNavigate={handleNavigate}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          modeLabel={modeLabel}
+          buildingMode={isBuildingMode}
+        />
+        <div className={`st-main ${activePage === 'home' ? 'page-home' : ''}`}>
+          {/* 1. Global Header with Anchored Alert Center */}
+          <Header
+            currentHour={currentHour}
+            hourData={hourData}
+            simParams={simParams}
+            isOutage={hourData?.is_outage}
+            isDisasterActive={Boolean(simParams.is_disaster_active && simParams.disaster_type && simParams.disaster_type !== 'none')}
+            disasterType={simParams.disaster_type}
+            currentMode={hourData?.mode}
+            batteryHealth={simData?.battery_health}
+            impactMetrics={simData?.impact_metrics}
+            currentRole={currentRole}
+            onRoleChange={setCurrentRole}
+            theme={theme}
+            onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            uiProfile={uiProfile}
+            onUiProfileChange={setUiProfile}
+            onNavigate={handleNavigate}
+            onOpenPitch={() => setIsPitchOpen(true)}
+          />
+
+          {/* 2. Main Dashboard Content */}
+          <main className="main-content st-content">
+            {renderPage()}
+          </main>
+        </div>
+      </div>
+
+      {/* Floating PlayDay button on home / DriveEV / Disaster (shared hour state) */}
+      {(['home', 'driveev', 'disaster'].includes(activePage) ||
+        (isBuildingMode && (activePage === 'history30' || activePage === 'future5y'))) && !loading && (
+        <PlayDayFab
+          currentHour={currentHour}
+          onHourChange={setCurrentHour}
+          outageHours={simParams.outage_hours || []}
+          hazardHour={simParams.is_disaster_active ? simParams.hazard_hour : null}
+          onToggleHourOutage={handleToggleHourOutage}
+          isDisasterActive={isDisasterActive}
+          disasterType={simParams.disaster_type}
+          disasterStart={simParams.disaster_start_hour ?? simParams.cyclone_start_hour ?? 12}
+          disasterEnd={simParams.disaster_end_hour ?? simParams.cyclone_end_hour ?? 22}
+          cycloneStart={simParams.cyclone_start_hour ?? 12}
+          cycloneEnd={simParams.cyclone_end_hour ?? 22}
+          onEndDisaster={() => handleParamChange({ is_disaster_active: false }, true)}
+        />
+      )}
+
+      {/* Floating quick-insight drawers (existing components, unchanged data) */}
+      <InsightDrawer
+        open={insight === 'solar'}
+        title={insightMeta.solar.title}
+        subtitle={insightMeta.solar.sub}
+        onClose={() => setInsight(null)}
+      >
+        <SolarForecastPanel solarForecast={simData?.solar_forecast} />
+      </InsightDrawer>
+
+      <InsightDrawer
+        open={insight === 'demand'}
+        title={insightMeta.demand.title}
+        subtitle={insightMeta.demand.sub}
+        onClose={() => setInsight(null)}
+        width={980}
+      >
+        <EnergyCharts
+          hourlyData={simData?.hourly}
+          currentHour={currentHour}
+          hourData={hourData}
+          trajectoryData={trajectoryData}
+          demandAnalytics={simData?.demand_analytics}
+          daysInService={simParams.days_in_service}
+          currentRole={currentRole}
+          initialTab="demand_pred"
+        />
+      </InsightDrawer>
+
+      <InsightDrawer
+        open={insight === 'fairness'}
+        title={insightMeta.fairness.title}
+        subtitle={insightMeta.fairness.sub}
+        onClose={() => setInsight(null)}
+        width={980}
+      >
+        <EnergyCharts
+          hourlyData={simData?.hourly}
+          currentHour={currentHour}
+          hourData={hourData}
+          trajectoryData={trajectoryData}
+          demandAnalytics={simData?.demand_analytics}
+          daysInService={simParams.days_in_service}
+          currentRole={currentRole}
+          initialTab="fairness_table"
+        />
+        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" className="btn-primary" style={{ padding: '8px 14px', fontSize: 12 }} onClick={() => { setInsight(null); setIsFairnessOpen(true); }}>
+            Open worked math modal →
+          </button>
+        </div>
+      </InsightDrawer>
+
+      <InsightDrawer
+        open={insight === 'roi'}
+        title={insightMeta.roi.title}
+        subtitle={insightMeta.roi.sub}
+        onClose={() => setInsight(null)}
+      >
+        <div className="st-roi-grid">
+          <div><span>Daily savings</span><b>+₹{Number(finDaily).toLocaleString()}</b></div>
+          <div><span>Monthly savings</span><b>₹{(Number(finMonthly) / 100000).toFixed(2)} Lakhs</b></div>
+          <div><span>Annual savings</span><b>₹{(Number(finAnnual) / 100000).toFixed(2)} Lakhs</b></div>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+          Odisha ToU: Peak (18:00–22:00) ₹8.50/kWh • Normal (06:00–18:00) ₹6.80/kWh • Off-peak (22:00–06:00) ₹4.50/kWh.
+          Shared battery discharges during peak windows. Full audited breakdown is preserved on the Certificate page.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" className="btn-secondary" style={{ padding: '8px 14px', fontSize: 12 }} onClick={() => { setInsight(null); handleNavigate('certificate'); }}>
+            Open detailed Financial ROI view →
+          </button>
+        </div>
+      </InsightDrawer>
+
+      {/* 3. Pitch Slide Deck Modal (preserved for ?modal=pitch deep links) */}
       {isPitchOpen && (
-        <PitchModal 
+        <PitchModal
           isOpen={isPitchOpen}
           onClose={() => setIsPitchOpen(false)}
           simData={simData}
@@ -404,18 +687,18 @@ export default function App() {
         />
       )}
 
-      {/* 5. Official Regulatory & Fairness Audit Certificate Modal */}
+      {/* 5. Official Regulatory & Fairness Audit Certificate Modal (preserved for ?modal=audit deep links) */}
       {isAuditOpen && (
-        <AuditModal 
+        <AuditModal
           isOpen={isAuditOpen}
           onClose={() => setIsAuditOpen(false)}
           simData={simData}
         />
       )}
 
-      {/* 6. Algorithmic Without S24 vs With S24 Comparison Modal (Section E) */}
+      {/* 6. Algorithmic Without S24 vs With S24 Comparison Modal (preserved for ?modal=compare deep links) */}
       {isCompareOpen && (
-        <ComparisonModal 
+        <ComparisonModal
           isOpen={isCompareOpen}
           onClose={() => setIsCompareOpen(false)}
           simData={simData}

@@ -51,7 +51,17 @@ export default function AlertCenter({
   simParams,
   currentHour = 12,
   isEmergency = false,
+  theme = 'dark',
 }) {
+  const isLight = theme === 'light';
+  // UI-ONLY surfaces: popup chrome follows the site theme; severities keep
+  // their red/amber coding, info-blue becomes warm bronze to fit the palette.
+  const surfaceBg = isLight ? 'rgba(255, 253, 247, 0.97)' : 'rgba(9, 14, 23, 0.97)';
+  const surfaceSolid = isLight ? '#fffdf7' : '#090e17';
+  const surfaceBorder = isLight ? 'rgba(180, 83, 9, 0.3)' : 'rgba(255, 255, 255, 0.15)';
+  const primaryText = isLight ? '#1c1917' : '#f8fafc';
+  const secondaryText = isLight ? '#44403c' : '#94a3b8';
+  const mutedText = isLight ? '#6b6259' : '#64748b';
   const [alerts, setAlerts] = useState([]);
   const [activeToast, setActiveToast] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -190,10 +200,10 @@ export default function AlertCenter({
         };
       default:
         return {
-          bg: 'rgba(56, 189, 248, 0.12)',
-          border: '#38bdf8',
-          color: '#38bdf8',
-          badgeBg: 'rgba(56, 189, 248, 0.2)',
+          bg: 'rgba(255, 183, 3, 0.14)',
+          border: '#b45309',
+          color: '#b45309',
+          badgeBg: 'rgba(255, 183, 3, 0.2)',
           icon: Info,
           label: 'TELEMETRY',
         };
@@ -208,21 +218,21 @@ export default function AlertCenter({
         className={`btn-secondary btn-header ${isOpen ? 'active' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
         style={{
-          borderColor: isEmergency ? '#ef4444' : (isOpen ? '#f59e0b' : 'rgba(255, 255, 255, 0.15)'),
-          background: isOpen ? 'rgba(245, 158, 11, 0.15)' : (isEmergency ? 'rgba(239, 68, 68, 0.15)' : 'transparent'),
-          color: isEmergency ? '#fca5a5' : (isOpen ? '#fbbf24' : '#f8fafc'),
+          borderColor: isEmergency ? '#dc2626' : (isOpen ? '#ea580c' : 'rgba(255, 133, 0, 0.55)'),
+          background: isEmergency ? '#dc2626' : (isOpen ? '#7c2d12' : '#2b1a10'),
+          color: isEmergency ? '#ffffff' : (isOpen ? '#fff7ed' : '#ffd9a8'),
           position: 'relative',
-          boxShadow: isEmergency ? '0 0 10px rgba(239, 68, 68, 0.35)' : 'none',
+          boxShadow: isEmergency ? '0 0 10px rgba(220, 38, 38, 0.45)' : 'none',
         }}
         title="Open Simulated Emergency Alert Center & Session Notification Stream"
       >
-        <Bell size={13} color={isEmergency ? '#ef4444' : (isOpen ? '#f59e0b' : '#94a3b8')} />
+        <Bell size={13} color={isEmergency ? '#ffffff' : (isOpen ? '#fff7ed' : '#ffb703')} />
         <span>Alerts</span>
         {totalCount > 0 && (
           <span 
             style={{
-              background: isEmergency ? '#ef4444' : '#f59e0b',
-              color: '#ffffff',
+              background: isEmergency ? '#ffffff' : '#ffb703',
+              color: isEmergency ? '#dc2626' : '#431407',
               fontSize: '9px',
               fontWeight: 800,
               borderRadius: '10px',
@@ -250,12 +260,12 @@ export default function AlertCenter({
             zIndex: 99999,
             width: '390px',
             maxWidth: 'calc(100vw - 32px)',
-            background: 'rgba(9, 14, 23, 0.97)',
+            background: surfaceBg,
             backdropFilter: 'blur(16px)',
             border: `1.5px solid ${getSeverityMeta(activeToast.severity).border}`,
             borderRadius: '14px',
             boxShadow: `0 16px 40px rgba(0, 0, 0, 0.8), 0 0 24px ${getSeverityMeta(activeToast.severity).border}40`,
-            color: '#f8fafc',
+            color: primaryText,
             overflow: 'hidden',
             animation: 'toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           }}
@@ -266,8 +276,8 @@ export default function AlertCenter({
             alignItems: 'center',
             justifyContent: 'space-between',
             padding: '10px 14px',
-            background: 'rgba(255, 255, 255, 0.03)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            background: isLight ? 'rgba(120, 53, 15, 0.06)' : 'rgba(255, 255, 255, 0.03)',
+            borderBottom: isLight ? '1px solid rgba(180, 83, 9, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <div style={{
@@ -288,9 +298,9 @@ export default function AlertCenter({
 
               {/* Explicit Scenario Tag (BUG 2 Verification) */}
               <div style={{
-                background: 'rgba(56, 189, 248, 0.18)',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                color: '#38bdf8',
+                background: 'rgba(255, 183, 3, 0.18)',
+                border: '1px solid rgba(180, 83, 9, 0.45)',
+                color: '#b45309',
                 padding: '2px 6px',
                 borderRadius: '4px',
                 fontSize: '9.5px',
@@ -300,7 +310,7 @@ export default function AlertCenter({
                 🏷️ {getDisasterTag(activeToast.disaster_type)}
               </div>
 
-              <span style={{ fontSize: '10px', color: '#94a3b8' }}>• Now</span>
+              <span style={{ fontSize: '10px', color: secondaryText }}>• Now</span>
             </div>
 
             <button
@@ -309,7 +319,7 @@ export default function AlertCenter({
               style={{
                 background: 'transparent',
                 border: 'none',
-                color: '#94a3b8',
+                color: secondaryText,
                 cursor: 'pointer',
                 padding: '2px',
                 display: 'flex',
@@ -348,7 +358,7 @@ export default function AlertCenter({
                 }}>
                   {activeToast.title}
                 </div>
-                <div style={{ fontSize: '11.5px', color: '#e2e8f0', lineHeight: 1.45 }}>
+                <div style={{ fontSize: '11.5px', color: isLight ? '#44403c' : '#e2e8f0', lineHeight: 1.45 }}>
                   {activeToast.message}
                 </div>
               </div>
@@ -364,12 +374,12 @@ export default function AlertCenter({
               borderTop: '1px solid rgba(255, 255, 255, 0.06)',
               fontSize: '10.5px',
             }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8', fontWeight: 600 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--energy-green)', fontWeight: 600 }}>
                 <Building2 size={12} />
                 <span>{activeToast.affected_building || 'Campus Microgrid'}</span>
               </span>
 
-              <span style={{ color: '#94a3b8', fontFamily: 'monospace' }}>
+              <span style={{ color: secondaryText, fontFamily: 'monospace' }}>
                 Simulated Hour {activeToast.timestamp || `${currentHour}:00`}
               </span>
             </div>
@@ -381,7 +391,7 @@ export default function AlertCenter({
             borderTop: '1px solid rgba(245, 158, 11, 0.25)',
             padding: '7px 12px',
             fontSize: '9.5px',
-            color: '#fbbf24',
+            color: 'var(--battery-cyan)',
             lineHeight: 1.35,
             fontWeight: 500,
           }}>
@@ -392,7 +402,7 @@ export default function AlertCenter({
           <div style={{
             width: '100%',
             height: '3px',
-            background: 'rgba(255, 255, 255, 0.1)',
+            background: isLight ? 'rgba(120, 53, 15, 0.15)' : 'rgba(255, 255, 255, 0.1)',
           }}>
             <div 
               style={{
@@ -415,8 +425,8 @@ export default function AlertCenter({
             right: 0,
             width: '410px',
             maxWidth: 'calc(100vw - 32px)',
-            background: '#090e17',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
+            background: surfaceSolid,
+            border: `1px solid ${surfaceBorder}`,
             borderRadius: '12px',
             boxShadow: '0 20px 50px rgba(0,0,0,0.85), 0 0 25px rgba(0,0,0,0.5)',
             zIndex: 99999,
@@ -429,8 +439,8 @@ export default function AlertCenter({
           {/* Header (BUG 1 FIX: totalCount derives directly from alerts.length) */}
           <div style={{
             padding: '12px 16px',
-            background: 'rgba(255, 255, 255, 0.03)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            background: isLight ? 'rgba(120, 53, 15, 0.06)' : 'rgba(255, 255, 255, 0.03)',
+            borderBottom: isLight ? '1px solid rgba(180, 83, 9, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -440,8 +450,8 @@ export default function AlertCenter({
                 <Bell size={16} />
               </div>
               <div>
-                <b style={{ fontSize: '13px', color: '#f8fafc' }}>Simulated Alert Center</b>
-                <div style={{ fontSize: '10.5px', color: '#94a3b8' }}>
+                <b style={{ fontSize: '13px', color: primaryText }}>Simulated Alert Center</b>
+                <div style={{ fontSize: '10.5px', color: secondaryText }}>
                   Live simulation notification stream ({totalCount} total)
                 </div>
               </div>
@@ -454,8 +464,8 @@ export default function AlertCenter({
                   onClick={handleClearHistory}
                   style={{
                     background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#94a3b8',
+                    border: `1px solid ${surfaceBorder}`,
+                    color: secondaryText,
                     padding: '3px 8px',
                     borderRadius: '4px',
                     fontSize: '10px',
@@ -476,7 +486,7 @@ export default function AlertCenter({
                 style={{
                   background: 'transparent',
                   border: 'none',
-                  color: '#94a3b8',
+                  color: secondaryText,
                   cursor: 'pointer',
                   padding: '4px',
                   display: 'flex',
@@ -495,13 +505,13 @@ export default function AlertCenter({
             borderBottom: '1px solid rgba(245, 158, 11, 0.2)',
             padding: '8px 14px',
             fontSize: '10.5px',
-            color: '#fbbf24',
+            color: 'var(--battery-cyan)',
             lineHeight: 1.4,
             display: 'flex',
             alignItems: 'flex-start',
             gap: 6,
           }}>
-            <Info size={14} color="#fbbf24" style={{ flexShrink: 0, marginTop: 1 }} />
+            <Info size={14} color="var(--battery-cyan)" style={{ flexShrink: 0, marginTop: 1 }} />
             <span>{SIMULATED_DISCLAIMER_TEXT}</span>
           </div>
 
@@ -510,16 +520,16 @@ export default function AlertCenter({
             display: 'flex',
             gap: 6,
             padding: '8px 14px',
-            background: 'rgba(0, 0, 0, 0.3)',
-            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+            background: isLight ? 'rgba(120, 53, 15, 0.05)' : 'rgba(0, 0, 0, 0.3)',
+            borderBottom: isLight ? '1px solid rgba(180, 83, 9, 0.2)' : '1px solid rgba(255, 255, 255, 0.06)',
           }}>
             <button
               type="button"
               onClick={() => setFilterSeverity('all')}
               style={{
-                background: filterSeverity === 'all' ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
-                border: filterSeverity === 'all' ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid transparent',
-                color: filterSeverity === 'all' ? '#f8fafc' : '#94a3b8',
+                background: filterSeverity === 'all' ? (isLight ? 'rgba(234, 88, 12, 0.18)' : 'rgba(255, 255, 255, 0.12)') : 'transparent',
+                border: filterSeverity === 'all' ? (isLight ? '1px solid rgba(234, 88, 12, 0.45)' : '1px solid rgba(255, 255, 255, 0.25)') : '1px solid transparent',
+                color: filterSeverity === 'all' ? (isLight ? '#9a3412' : '#f8fafc') : secondaryText,
                 padding: '3px 8px',
                 borderRadius: '4px',
                 fontSize: '10.5px',
@@ -537,7 +547,7 @@ export default function AlertCenter({
               style={{
                 background: filterSeverity === 'critical' ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
                 border: filterSeverity === 'critical' ? '1px solid #ef4444' : '1px solid transparent',
-                color: filterSeverity === 'critical' ? '#f87171' : '#94a3b8',
+                color: filterSeverity === 'critical' ? '#f87171' : secondaryText,
                 padding: '3px 8px',
                 borderRadius: '4px',
                 fontSize: '10.5px',
@@ -555,7 +565,7 @@ export default function AlertCenter({
               style={{
                 background: filterSeverity === 'warning' ? 'rgba(245, 158, 11, 0.2)' : 'transparent',
                 border: filterSeverity === 'warning' ? '1px solid #f59e0b' : '1px solid transparent',
-                color: filterSeverity === 'warning' ? '#fbbf24' : '#94a3b8',
+                color: filterSeverity === 'warning' ? '#fbbf24' : secondaryText,
                 padding: '3px 8px',
                 borderRadius: '4px',
                 fontSize: '10.5px',
@@ -571,9 +581,9 @@ export default function AlertCenter({
               type="button"
               onClick={() => setFilterSeverity('info')}
               style={{
-                background: filterSeverity === 'info' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
-                border: filterSeverity === 'info' ? '1px solid #38bdf8' : '1px solid transparent',
-                color: filterSeverity === 'info' ? '#38bdf8' : '#94a3b8',
+                background: filterSeverity === 'info' ? 'rgba(255, 183, 3, 0.18)' : 'transparent',
+                border: filterSeverity === 'info' ? '1px solid #b45309' : '1px solid transparent',
+                color: filterSeverity === 'info' ? '#b45309' : secondaryText,
                 padding: '3px 8px',
                 borderRadius: '4px',
                 fontSize: '10.5px',
@@ -599,16 +609,16 @@ export default function AlertCenter({
               <div style={{
                 textAlign: 'center',
                 padding: '30px 10px',
-                color: '#64748b',
+                color: mutedText,
                 fontSize: '12px',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 6,
               }}>
-                <CheckCircle2 size={24} color="#10b981" />
+                <CheckCircle2 size={24} color="var(--energy-green)" />
                 <span>No alerts recorded for this active scenario.</span>
-                <span style={{ fontSize: '10.5px', color: '#475569' }}>
+                <span style={{ fontSize: '10.5px', color: secondaryText }}>
                   Trigger a disaster scenario or manual power cut in the sandbox to generate simulated alerts.
                 </span>
               </div>
@@ -645,9 +655,9 @@ export default function AlertCenter({
 
                         {/* Scenario Tag inside card */}
                         <span style={{
-                          background: 'rgba(56, 189, 248, 0.15)',
-                          border: '1px solid rgba(56, 189, 248, 0.3)',
-                          color: '#38bdf8',
+                          background: 'rgba(255, 183, 3, 0.18)',
+                          border: '1px solid rgba(180, 83, 9, 0.45)',
+                          color: '#b45309',
                           fontSize: '9px',
                           fontWeight: 700,
                           padding: '1px 5px',
@@ -657,12 +667,12 @@ export default function AlertCenter({
                         </span>
                       </div>
 
-                      <span style={{ fontSize: '9.5px', color: '#94a3b8', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '9.5px', color: secondaryText, fontFamily: 'monospace' }}>
                         Hour {alert.timestamp || `${alert.hour}:00`}
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '11.5px', color: '#e2e8f0', lineHeight: 1.45 }}>
+                    <div style={{ fontSize: '11.5px', color: isLight ? '#44403c' : '#e2e8f0', lineHeight: 1.45 }}>
                       {alert.message}
                     </div>
 
@@ -672,9 +682,9 @@ export default function AlertCenter({
                       alignItems: 'center',
                       marginTop: 2,
                       fontSize: '10px',
-                      color: '#94a3b8',
+                      color: secondaryText,
                     }}>
-                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>
+                      <span style={{ color: 'var(--energy-green)', fontWeight: 600 }}>
                         📍 {alert.affected_building}
                       </span>
                       <span>Tier {alert.tier || 'N/A'} Priority</span>
@@ -688,16 +698,16 @@ export default function AlertCenter({
           {/* Footer */}
           <div style={{
             padding: '8px 14px',
-            background: 'rgba(0, 0, 0, 0.4)',
-            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+            background: isLight ? 'rgba(120, 53, 15, 0.05)' : 'rgba(0, 0, 0, 0.4)',
+            borderTop: isLight ? '1px solid rgba(180, 83, 9, 0.2)' : '1px solid rgba(255, 255, 255, 0.06)',
             fontSize: '10px',
-            color: '#64748b',
+            color: mutedText,
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
           }}>
             <span>SynapTwin v2.4 Microgrid Notification Layer</span>
-            <span style={{ color: '#10b981', fontWeight: 600 }}>● Online</span>
+            <span style={{ color: 'var(--energy-green)', fontWeight: 600 }}>● Online</span>
           </div>
         </div>
       )}

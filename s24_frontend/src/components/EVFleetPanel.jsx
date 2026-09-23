@@ -217,15 +217,15 @@ export default function EVFleetPanel({
     <div className="panel-card" style={{ overflow: 'visible' }}>
       <div className="panel-header">
         <div className="panel-title">
-          <Bike size={16} color="#38bdf8" />
-          <span>driEV &mdash; Campus Shared Electric Scooter Hub (12 Units)</span>
+          <Bike size={16} color="var(--accent-strong)" />
+          <span>driEV Fleet</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="kpi-pill" style={{ 
-            background: isOutage ? 'rgba(239,68,68,0.15)' : (currentSurplusSoak > 0 ? 'rgba(16,185,129,0.15)' : 'rgba(56,189,248,0.15)'),
-            color: isOutage ? '#f87171' : (currentSurplusSoak > 0 ? '#34d399' : '#38bdf8'),
-            border: `1px solid ${isOutage ? 'rgba(239,68,68,0.3)' : (currentSurplusSoak > 0 ? 'rgba(16,185,129,0.3)' : 'rgba(56,189,248,0.3)')}`,
+          <span className="kpi-pill" style={{
+            background: isOutage ? 'rgba(239,68,68,0.15)' : (currentSurplusSoak > 0 ? 'rgba(255,133,0,0.15)' : 'rgba(255, 183, 3, 0.12)'),
+            color: isOutage ? '#f87171' : (currentSurplusSoak > 0 ? 'var(--energy-green)' : 'var(--battery-cyan)'),
+            border: `1px solid ${isOutage ? 'rgba(239,68,68,0.3)' : (currentSurplusSoak > 0 ? 'rgba(255,133,0,0.4)' : 'rgba(255, 183, 3, 0.4)')}`,
             fontWeight: 600,
             fontSize: '11px',
           }}>
@@ -242,45 +242,45 @@ export default function EVFleetPanel({
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
           gap: 8,
-          background: 'rgba(255, 255, 255, 0.02)',
+          background: 'var(--bg-secondary)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-md)',
           padding: '10px 14px',
         }}>
           <div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Charging at Bay</div>
-            <div style={{ fontSize: '16px', fontWeight: 800, color: '#38bdf8' }}>
-              {chargingCount} <span style={{ fontSize: '11px', color: '#64748b' }}>scooters</span>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Charging at Bay</div>
+            <div style={{ fontSize: '16px', fontWeight: 800, color: '#9a3412' }}>
+              {chargingCount} <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>scooters</span>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Available for Booking</div>
-            <div style={{ fontSize: '16px', fontWeight: 800, color: '#10b981' }}>
-              {availableCount} <span style={{ fontSize: '11px', color: '#64748b' }}>ready</span>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Available for Booking</div>
+            <div style={{ fontSize: '16px', fontWeight: 800, color: '#c2410c' }}>
+              {availableCount} <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>ready</span>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Active on Campus</div>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Active on Campus</div>
             <div style={{ fontSize: '16px', fontWeight: 800, color: '#f59e0b' }}>
-              {onRideCount} <span style={{ fontSize: '11px', color: '#64748b' }}>on ride</span>
+              {onRideCount} <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>on ride</span>
             </div>
           </div>
           <div>
-            <div style={{ fontSize: '11px', color: '#94a3b8' }}>Charging Bay Load</div>
-            <div style={{ fontSize: '16px', fontWeight: 800, color: '#a78bfa' }}>
-              {totalDemandKw.toFixed(1)} <span style={{ fontSize: '11px', color: '#64748b' }}>kW (Tier-4)</span>
+            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Charging Bay Load</div>
+            <div style={{ fontSize: '16px', fontWeight: 800, color: '#b45309' }}>
+              {totalDemandKw.toFixed(1)} <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>kW (Tier-4)</span>
             </div>
           </div>
         </div>
 
         {/* Dynamic Surplus Explanation Banner */}
         <div style={{
-          background: 'rgba(255, 255, 255, 0.02)',
+          background: 'var(--bg-secondary)',
           border: '1px solid var(--border-subtle)',
           borderRadius: 'var(--radius-sm)',
           padding: '8px 12px',
           fontSize: '11px',
-          color: '#f8fafc',
+          color: 'var(--text-primary)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -289,18 +289,18 @@ export default function EVFleetPanel({
           marginTop: 10,
           marginBottom: 12,
         }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: currentSurplusSoak > 0 ? '#34d399' : '#94a3b8' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: currentSurplusSoak > 0 ? 'var(--energy-green)' : 'var(--text-secondary)' }}>
             <Info size={13} />
             <span>{getSoakStatusText()}</span>
           </span>
-          <span style={{ color: '#64748b' }}>
-            Emergency Buffer Reserve: <b style={{ color: '#38bdf8' }}>{emergencyBufferKw.toFixed(1)} kW max</b>
+          <span style={{ color: 'var(--text-muted)' }}>
+            Emergency Buffer Reserve: <b style={{ color: 'var(--energy-green)' }}>{emergencyBufferKw.toFixed(1)} kW max</b>
           </span>
         </div>
 
         {/* All 12 Scooters Grid */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: '11px', color: '#94a3b8' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: '11px', color: 'var(--text-secondary)' }}>
             <span>Fleet Breakdown (7 Speed Tier + 5 Luxe Tier &bull; Total: 12 Units)</span>
             <span style={{ color: '#38bdf8', fontWeight: 600 }}>Hour {String(currentHour).padStart(2, '0')}:00 Telemetry</span>
           </div>
@@ -310,14 +310,14 @@ export default function EVFleetPanel({
               const isSpeed = scooter.tier === 'Speed';
               const rawStatus = scooter.status || 'CHARGING';
               const displayStatus = (rawStatus === 'ON_RIDE' || rawStatus === 'ON RIDE') ? 'ON RIDE' : rawStatus;
-              const statusColor = displayStatus === 'CHARGING' ? '#38bdf8' : (displayStatus === 'AVAILABLE' ? '#10b981' : '#f59e0b');
-              const statusBg = displayStatus === 'CHARGING' ? 'rgba(56,189,248,0.15)' : (displayStatus === 'AVAILABLE' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)');
+              const statusColor = displayStatus === 'CHARGING' ? '#9a3412' : (displayStatus === 'AVAILABLE' ? '#c2410c' : '#b45309');
+              const statusBg = displayStatus === 'CHARGING' ? 'rgba(234,88,12,0.15)' : (displayStatus === 'AVAILABLE' ? 'rgba(234,88,12,0.12)' : 'rgba(255,183,3,0.15)');
 
               return (
                 <div 
                   key={idx} 
                   style={{
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    background: 'var(--bg-secondary)',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: 'var(--radius-sm)',
                     padding: '8px 10px',
@@ -328,10 +328,10 @@ export default function EVFleetPanel({
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <b style={{ color: '#f8fafc', fontSize: '11px' }}>{scooter.id}</b>
+                      <b style={{ color: 'var(--text-primary)', fontSize: '11px' }}>{scooter.id}</b>
                       <span style={{ 
-                        background: isSpeed ? 'rgba(59,130,246,0.15)' : 'rgba(168,85,247,0.15)',
-                        color: isSpeed ? '#60a5fa' : '#c084fc',
+                        background: isSpeed ? 'rgba(234,88,12,0.15)' : 'rgba(255,183,3,0.15)',
+                        color: isSpeed ? '#c2410c' : '#b45309',
                         fontSize: '9px',
                         padding: '1px 4px',
                         borderRadius: 3,
@@ -356,7 +356,7 @@ export default function EVFleetPanel({
 
                   {/* SoC Progress Bar */}
                   <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-secondary)' }}>
                       <span>SoC: {scooter.soc_pct}%</span>
                       <span>{scooter.range_km} km</span>
                     </div>
@@ -365,14 +365,14 @@ export default function EVFleetPanel({
                         style={{ 
                           width: `${scooter.soc_pct}%`, 
                           height: '100%', 
-                          background: scooter.soc_pct > 35 ? '#10b981' : '#f59e0b',
+                          background: scooter.soc_pct > 35 ? '#c2410c' : '#f59e0b',
                           borderRadius: 2 
                         }}
                       />
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '9px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
                     <span>{scooter.capacity_kwh || (isSpeed ? 2.5 : 3.0)} kWh pack</span>
                     <span>{scooter.charger_kw || (isSpeed ? 0.5 : 0.7)} kW charger</span>
                   </div>
@@ -385,10 +385,10 @@ export default function EVFleetPanel({
         {/* 24-Hour Solar Surplus Absorption & Outage Buffer Chart */}
         <div style={{ marginTop: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
               24-Hour driEV Solar Surplus Absorption &amp; Emergency Buffer Injection
             </span>
-            <span style={{ fontSize: '10px', color: '#64748b' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
               Midday Solar Surplus Soak &bull; Outage Emergency Buffer
             </span>
           </div>

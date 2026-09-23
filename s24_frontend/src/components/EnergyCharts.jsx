@@ -27,16 +27,28 @@ const TARGET_15_BUILDINGS = [
   { id: 'Research & Innovation Wing', label: 'Research Wing', match: 'research' },
 ];
 
-export default function EnergyCharts({ 
-  hourlyData = [], 
-  currentHour = 12, 
-  hourData, 
+export default function EnergyCharts({
+  hourlyData = [],
+  currentHour = 12,
+  hourData,
   trajectoryData = [],
   demandAnalytics,
   daysInService = 200,
   currentRole = 'admin',
+  initialTab = 'mix',
+  visibleTabs = null,
 }) {
-  const [activeTab, setActiveTab] = useState('mix'); // 'mix', 'demand_pred', 'blocks', 'battery'
+  // UI-ONLY: homepage sections may restrict which graph tabs are offered
+  // (e.g. Full Energy Mix only). Calculations, datasets, and interactions unchanged.
+  const TABS = visibleTabs || ['mix', 'demand_pred', 'blocks', 'battery', 'fairness_table'];
+  const resolveTab = (t) => (TABS.includes(t) ? t : TABS[0]);
+  const [activeTab, setActiveTab] = useState(resolveTab(initialTab)); // 'mix', 'demand_pred', 'blocks', 'battery'
+
+  // UI-ONLY: allow homepage scroll sections to open on a specific tab while
+  // preserving every calculation, dataset, and interaction unchanged.
+  useEffect(() => {
+    setActiveTab(resolveTab(initialTab));
+  }, [initialTab]);
 
   // Normal Mode vs Outage Simulation Mode Toggle
   const [simulationModeOverride, setSimulationModeOverride] = useState(null); // 'normal' | 'outage' | null
@@ -291,7 +303,7 @@ export default function EnergyCharts({
           zIndex: 1000,
           minWidth: 180,
         }}>
-          <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: 6 }}>
+          <div style={{ fontWeight: 700, color: '#ffb703', marginBottom: 6 }}>
             {title}
           </div>
           {dataObj?.isFireIsolated && (
@@ -323,7 +335,7 @@ export default function EnergyCharts({
               display: 'flex',
               justifyContent: 'space-between',
               gap: 14,
-              color: (dataObj.predicted - dataObj.actual) >= 0 ? '#38bdf8' : '#f59e0b',
+              color: (dataObj.predicted - dataObj.actual) >= 0 ? 'var(--energy-green)' : '#f59e0b',
               marginTop: 5,
               paddingTop: 5,
               borderTop: '1px solid rgba(255,255,255,0.08)',
@@ -337,14 +349,14 @@ export default function EnergyCharts({
           )}
           {dataObj?.deficit !== undefined && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: isOutageMode ? '#f87171' : '#38bdf8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: isOutageMode ? '#f87171' : 'var(--energy-green)' }}>
                 <span>{isOutageMode ? 'Deficit / Unmet:' : 'Grid-Covered (kW):'}</span>
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
                   {dataObj.deficit} kW
                 </span>
               </div>
               {!isOutageMode ? (
-                <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                   Fully served via grid import — not a shortfall.
                 </div>
               ) : (
@@ -363,18 +375,18 @@ export default function EnergyCharts({
   // Shared banner legend across 15 Buildings Balance & Fairness Table views
   const renderSharedLocalEquityBanner = () => (
     <div style={{
-      background: 'rgba(56, 189, 248, 0.05)',
-      border: '1px solid rgba(56, 189, 248, 0.2)',
+      background: 'rgba(234, 88, 12, 0.07)',
+      border: '1px solid rgba(234, 88, 12, 0.3)',
       borderRadius: 'var(--radius-sm)',
       padding: '7px 12px',
       fontSize: '11px',
-      color: '#cbd5e1',
+      color: 'var(--text-secondary)',
       display: 'flex',
       alignItems: 'center',
       gap: 8,
       lineHeight: 1.4,
     }}>
-      <Info size={14} color="#38bdf8" style={{ flexShrink: 0 }} />
+      <Info size={14} color="#ea580c" style={{ flexShrink: 0 }} />
       <span>
         Bars/values here show each building's <b>OWN solar + battery share only</b> (excludes grid import). They represent local-resource equity, not whether demand is actually being met — see <b>'Full Energy Mix'</b> for real-time reliability (Unserved Outage Deficit).
       </span>
@@ -385,8 +397,8 @@ export default function EnergyCharts({
     <div className="panel-card" style={{ height: '100%' }}>
       <div className="panel-header" style={{ flexWrap: 'wrap', gap: 10 }}>
         <div className="panel-title">
-          <Activity size={16} color="#38bdf8" />
-          <span>Real-Time Energy &amp; Storage Analytics</span>
+          <Activity size={16} color="var(--accent-strong)" />
+          <span>Energy Analytics</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -403,9 +415,9 @@ export default function EnergyCharts({
               type="button"
               onClick={() => setSimulationModeOverride('normal')}
               style={{
-                background: !isOutageMode ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
-                color: !isOutageMode ? '#34d399' : '#94a3b8',
-                border: !isOutageMode ? '1px solid rgba(16, 185, 129, 0.4)' : '1px solid transparent',
+                background: !isOutageMode ? 'rgba(255, 133, 0, 0.2)' : 'transparent',
+                color: !isOutageMode ? 'var(--energy-green)' : '#94a3b8',
+                border: !isOutageMode ? '1px solid rgba(255, 133, 0, 0.45)' : '1px solid transparent',
                 borderRadius: 4,
                 padding: '3px 8px',
                 fontSize: '10.5px',
@@ -425,9 +437,9 @@ export default function EnergyCharts({
               type="button"
               onClick={() => setSimulationModeOverride('outage')}
               style={{
-                background: isOutageMode ? 'rgba(239, 68, 68, 0.25)' : 'transparent',
-                color: isOutageMode ? '#f87171' : '#94a3b8',
-                border: isOutageMode ? '1px solid #ef4444' : '1px solid transparent',
+                background: isOutageMode ? 'rgba(255, 133, 0, 0.25)' : 'transparent',
+                color: isOutageMode ? 'var(--energy-green)' : '#94a3b8',
+                border: isOutageMode ? '1px solid rgba(255, 133, 0, 0.6)' : '1px solid transparent',
                 borderRadius: 4,
                 padding: '3px 8px',
                 fontSize: '10.5px',
@@ -445,48 +457,58 @@ export default function EnergyCharts({
             </button>
           </div>
 
-          {/* Tab Switcher */}
-          <div className="tab-nav" style={{ border: 'none', padding: 0, gap: 4 }}>
-            <button 
+          {/* Tab Switcher (UI-ONLY: hidden/restricted via visibleTabs on homepage sections) */}
+          <div className="tab-nav" style={{ border: 'none', padding: 0, gap: 4, display: TABS.length > 1 ? 'flex' : 'none' }}>
+            {TABS.includes('mix') && (
+            <button
               className={`tab-btn ${activeTab === 'mix' ? 'active' : ''}`}
               onClick={() => setActiveTab('mix')}
               style={{ fontSize: '11px', padding: '5px 10px' }}
             >
               <Layers size={13} />
-              <span>Full Energy Mix</span>
+              <span>Energy Mix</span>
             </button>
-            <button 
+            )}
+            {TABS.includes('demand_pred') && (
+            <button
               className={`tab-btn ${activeTab === 'demand_pred' ? 'active' : ''}`}
               onClick={() => setActiveTab('demand_pred')}
               style={{ fontSize: '11px', padding: '5px 10px' }}
             >
               <TrendingUp size={13} />
-              <span>Demand &amp; Forecast</span>
+              <span>Demand Forecast</span>
             </button>
-            <button 
+            )}
+            {TABS.includes('blocks') && (
+            <button
               className={`tab-btn ${activeTab === 'blocks' ? 'active' : ''}`}
               onClick={() => setActiveTab('blocks')}
               style={{ fontSize: '11px', padding: '5px 10px' }}
             >
               <BarChart3 size={13} />
-              <span>15 Buildings Balance (h{currentHour})</span>
+              <span>Buildings</span>
             </button>
-            <button 
+            )}
+            {TABS.includes('battery') && (
+            <button
               className={`tab-btn ${activeTab === 'battery' ? 'active' : ''}`}
               onClick={() => setActiveTab('battery')}
               style={{ fontSize: '11px', padding: '5px 10px' }}
             >
               <Battery size={13} />
-              <span>Battery 5-Yr Life</span>
+              <span>Battery Health</span>
             </button>
-            <button 
+            )}
+            {TABS.includes('fairness_table') && (
+            <button
               className={`tab-btn ${activeTab === 'fairness_table' ? 'active' : ''}`}
               onClick={() => setActiveTab('fairness_table')}
               style={{ fontSize: '11px', padding: '5px 10px' }}
             >
               <Table size={13} />
-              <span>Fairness Table (LP)</span>
+              <span>Fairness Table</span>
             </button>
+            )}
           </div>
         </div>
       </div>
@@ -573,25 +595,25 @@ export default function EnergyCharts({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-sm)',
               padding: '6px 12px',
               fontSize: '11px',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               flexWrap: 'wrap',
               gap: 8,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#38bdf8', fontWeight: 600 }}>1h Lookahead Model</span>
+                <span style={{ color: 'var(--energy-green)', fontWeight: 600 }}>1h Lookahead Model</span>
                 <span>&bull;</span>
-                <span>Inflection Lag: <span style={{ color: '#fbbf24' }}>06-09h (Ramp &darr;)</span>, <span style={{ color: '#38bdf8' }}>13h (Lunch &uarr;)</span>, <span style={{ color: '#fbbf24' }}>18-21h (Decline &uarr;)</span></span>
+                <span>Inflection Lag: <span style={{ color: 'var(--battery-cyan)' }}>06-09h (Ramp &darr;)</span>, <span style={{ color: 'var(--energy-green)' }}>13h (Lunch &uarr;)</span>, <span style={{ color: 'var(--battery-cyan)' }}>18-21h (Decline &uarr;)</span></span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span className="kpi-pill" style={{ background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '2px 8px', fontSize: '10.5px' }}>
+                <span className="kpi-pill" style={{ background: 'rgba(255, 133, 0, 0.12)', color: 'var(--energy-green)', border: '1px solid rgba(255, 133, 0, 0.4)', padding: '2px 8px', fontSize: '10.5px' }}>
                   Validated MAPE: &plusmn;3.8%
                 </span>
-                <span>h{String(currentHour).padStart(2, '0')}:00 Delta: <b style={{ color: (demandSeries[currentHour]?.delta ?? 0) >= 0 ? '#38bdf8' : '#f59e0b' }}>
+                <span>h{String(currentHour).padStart(2, '0')}:00 Delta: <b style={{ color: (demandSeries[currentHour]?.delta ?? 0) >= 0 ? 'var(--energy-green)' : '#f59e0b' }}>
                   {(demandSeries[currentHour]?.delta ?? 0) > 0 ? '+' : ''}{demandSeries[currentHour]?.delta ?? 0} kW
                 </b></span>
               </div>
@@ -667,23 +689,23 @@ export default function EnergyCharts({
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-sm)',
               padding: '6px 12px',
               fontSize: '11px',
-              color: '#94a3b8',
+              color: 'var(--text-secondary)',
               flexWrap: 'wrap',
               gap: 8,
             }}>
               <div>
-                <span>Telemetry Scope: <b style={{ color: '#38bdf8' }}>All 15 Campus Buildings</b></span>
-                <span style={{ marginLeft: 8 }}>&bull; Hour: <b style={{ color: '#f8fafc' }}>{String(currentHour).padStart(2, '0')}:00</b></span>
+                <span>Telemetry Scope: <b style={{ color: '#c2410c' }}>All 15 Campus Buildings</b></span>
+                <span style={{ marginLeft: 8 }}>&bull; Hour: <b style={{ color: 'var(--text-primary)' }}>{String(currentHour).padStart(2, '0')}:00</b></span>
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
-                <span>Total Demand: <b style={{ color: '#60a5fa' }}>{blockSeries.reduce((acc, b) => acc + b.load, 0).toFixed(1)} kW</b></span>
-                <span>Total Solar: <b style={{ color: '#fbbf24' }}>{blockSeries.reduce((acc, b) => acc + b.solar, 0).toFixed(1)} kW</b></span>
-                <span>Battery Dispatched: <b style={{ color: '#34d399' }}>{blockSeries.reduce((acc, b) => acc + b.allocated, 0).toFixed(1)} kW</b></span>
+                <span>Total Demand: <b style={{ color: '#9a3412' }}>{blockSeries.reduce((acc, b) => acc + b.load, 0).toFixed(1)} kW</b></span>
+                <span>Total Solar: <b style={{ color: '#b45309' }}>{blockSeries.reduce((acc, b) => acc + b.solar, 0).toFixed(1)} kW</b></span>
+                <span>Battery Dispatched: <b style={{ color: '#c2410c' }}>{blockSeries.reduce((acc, b) => acc + b.allocated, 0).toFixed(1)} kW</b></span>
               </div>
             </div>
 
@@ -715,9 +737,9 @@ export default function EnergyCharts({
                     <Tooltip content={<CustomTooltip />} />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10, position: 'relative', bottom: -5 }} />
 
-                    <Bar dataKey="load" name="Demand (kW)" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Bar dataKey="load" name="Demand (kW)" fill="#c2410c" radius={[3, 3, 0, 0]} maxBarSize={16} />
                     <Bar dataKey="solar" name="Solar PV (kW)" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                    <Bar dataKey="allocated" name="Battery Share (kW)" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Bar dataKey="allocated" name="Battery Share (kW)" fill="#dc2626" radius={[3, 3, 0, 0]} maxBarSize={16} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -733,8 +755,8 @@ export default function EnergyCharts({
               display: 'flex', 
               justifyContent: 'space-between', 
               alignItems: 'center', 
-              background: 'rgba(255,255,255,0.02)', 
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-sm)',
               padding: '8px 12px',
               flexWrap: 'wrap',
@@ -767,7 +789,7 @@ export default function EnergyCharts({
                   )}
                 </button>
 
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                   Horizon: <b>5.0 Years (1,800 Days)</b>
                 </span>
               </div>
@@ -775,21 +797,21 @@ export default function EnergyCharts({
               {/* Live Animated Telemetry HUD */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '11px', flexWrap: 'wrap' }}>
                 <span className="kpi-pill" style={{
-                  background: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                  color: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? '#fbbf24' : '#38bdf8',
-                  border: `1px solid ${isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'rgba(245, 158, 11, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                  background: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 133, 0, 0.15)',
+                  color: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? '#fbbf24' : 'var(--energy-green)',
+                  border: `1px solid ${isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 133, 0, 0.45)'}`,
                   fontSize: '10px',
                   fontWeight: 700
                 }}>
                   {isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'PROJECTED TIMELINE' : 'CURRENT STATE'}
                 </span>
-                <span>Timeline: <b style={{ color: '#38bdf8' }}>Year {currentAnimPoint.year?.toFixed(1) || '0.0'}</b> ({currentAnimPoint.day || 0}d)</span>
-                <span>SoC: <b style={{ color: '#38bdf8' }}>{(hourData?.battery_soc_pct ?? 78.4).toFixed(1)}%</b> ({(hourData?.battery_soc_kwh ?? 282.2).toFixed(0)} kWh)</span>
-                <span>SoH: <b style={{ color: currentAnimPoint.soh_pct >= 80 ? '#10b981' : (currentAnimPoint.soh_pct >= 60 ? '#f59e0b' : '#ef4444') }}>{currentAnimPoint.soh_pct?.toFixed(1)}%</b></span>
+                <span>Timeline: <b style={{ color: 'var(--energy-green)' }}>Year {currentAnimPoint.year?.toFixed(1) || '0.0'}</b> ({currentAnimPoint.day || 0}d)</span>
+                <span>SoC: <b style={{ color: 'var(--energy-green)' }}>{(hourData?.battery_soc_pct ?? 78.4).toFixed(1)}%</b> ({(hourData?.battery_soc_kwh ?? 282.2).toFixed(0)} kWh)</span>
+                <span>SoH: <b style={{ color: currentAnimPoint.soh_pct >= 80 ? 'var(--energy-green)' : (currentAnimPoint.soh_pct >= 60 ? '#f59e0b' : '#ef4444') }}>{currentAnimPoint.soh_pct?.toFixed(1)}%</b></span>
                 <span className="kpi-pill" style={{ 
-                  background: currentAnimPoint.duty_tier === 'FULL_DUTY' ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
-                  color: currentAnimPoint.duty_tier === 'FULL_DUTY' ? '#34d399' : '#fbbf24',
-                  border: `1px solid ${currentAnimPoint.duty_tier === 'FULL_DUTY' ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                  background: currentAnimPoint.duty_tier === 'FULL_DUTY' ? 'rgba(255,133,0,0.15)' : 'rgba(245,158,11,0.15)',
+                  color: currentAnimPoint.duty_tier === 'FULL_DUTY' ? 'var(--energy-green)' : '#fbbf24',
+                  border: `1px solid ${currentAnimPoint.duty_tier === 'FULL_DUTY' ? 'rgba(255,133,0,0.45)' : 'rgba(245,158,11,0.3)'}`,
                   fontSize: '10px',
                   fontWeight: 700
                 }}>
@@ -800,21 +822,21 @@ export default function EnergyCharts({
 
             {/* Explicit SoC vs SoH Technical Distinction Badge */}
             <div style={{
-              background: 'rgba(56, 189, 248, 0.06)',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
+              background: 'rgba(234, 88, 12, 0.07)',
+              border: '1px solid rgba(234, 88, 12, 0.3)',
               borderRadius: 'var(--radius-sm)',
               padding: '6px 10px',
               fontSize: '11px',
-              color: '#cbd5e1',
+              color: 'var(--text-secondary)',
               display: 'flex',
               alignItems: 'center',
               gap: 8,
               lineHeight: 1.4,
             }}>
-              <Info size={14} color="#38bdf8" />
+              <Info size={14} color="#ea580c" />
               <div>
-                <b style={{ color: '#38bdf8' }}>SoC (State-of-Charge: {(hourData?.battery_soc_pct ?? 78.4).toFixed(1)}%)</b> = Current instantaneous energy stored right now vs.{' '}
-                <b style={{ color: '#10b981' }}>SoH (State-of-Health: {currentAnimPoint.soh_pct?.toFixed(1)}% {isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? `[Projected Year ${currentAnimPoint.year?.toFixed(1)}]` : `[Current Day ${daysInService}]`})</b> = Long-term electrochemical health &amp; degradation state.
+                <b style={{ color: '#c2410c' }}>SoC (State-of-Charge: {(hourData?.battery_soc_pct ?? 78.4).toFixed(1)}%)</b> = Current instantaneous energy stored right now vs.{' '}
+                <b style={{ color: '#b45309' }}>SoH (State-of-Health: {currentAnimPoint.soh_pct?.toFixed(1)}% {isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? `[Projected Year ${currentAnimPoint.year?.toFixed(1)}]` : `[Current Day ${daysInService}]`})</b> = Long-term electrochemical health &amp; degradation state.
               </div>
             </div>
 
@@ -911,10 +933,10 @@ export default function EnergyCharts({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Calculator size={14} color="#34d399" />
+                <Calculator size={14} color="var(--energy-green)" />
                 <span>Building Allocation &amp; Satisfaction Ratio Matrix (Hour {String(currentHour).padStart(2, '0')}:00 IST)</span>
               </div>
-              <span className="kpi-pill" style={{ background: isOutageMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)', color: isOutageMode ? '#f87171' : '#34d399' }}>
+              <span className="kpi-pill" style={{ background: isOutageMode ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 133, 0, 0.15)', color: isOutageMode ? '#f87171' : 'var(--energy-green)' }}>
                 Optimization Mode: {isOutageMode ? 'DISASTER_TRIAGE (OUTAGE)' : (hourData?.mode || 'FAIRNESS_LP')}
               </span>
             </div>
@@ -925,7 +947,7 @@ export default function EnergyCharts({
             <div style={{ overflowX: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.03)', color: '#94a3b8', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <tr style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
                     <th style={{ padding: '8px 10px' }}>Campus Building</th>
                     <th style={{ padding: '8px 10px' }}>Demand (kW)</th>
                     <th style={{ padding: '8px 10px' }}>Own Solar (kW)</th>
@@ -954,10 +976,10 @@ export default function EnergyCharts({
                           {target.id}
                           {isFireIso && <span style={{ marginLeft: 6, fontSize: 10, color: '#ef4444', fontWeight: 700 }}>[FIRE ISOLATED]</span>}
                         </td>
-                        <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{b.load_kw.toFixed(1)}</td>
+                        <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>{b.load_kw.toFixed(1)}</td>
                         <td style={{ padding: '7px 10px', color: '#f59e0b' }}>{b.solar_kw.toFixed(1)}</td>
-                        <td style={{ padding: '7px 10px', color: isOutageMode ? '#f87171' : '#38bdf8' }}>{b.deficit_kw.toFixed(1)}</td>
-                        <td style={{ padding: '7px 10px', color: isFireIso ? '#64748b' : '#10b981', fontWeight: 700 }}>+{b.allocated_kw.toFixed(1)}</td>
+                        <td style={{ padding: '7px 10px', color: isOutageMode ? '#f87171' : 'var(--energy-green)' }}>{b.deficit_kw.toFixed(1)}</td>
+                        <td style={{ padding: '7px 10px', color: isFireIso ? 'var(--text-muted)' : 'var(--energy-green)', fontWeight: 700 }}>+{b.allocated_kw.toFixed(1)}</td>
                         <td style={{ padding: '7px 10px' }}>
                           {isFireIso ? (
                             <span style={{ 
@@ -972,9 +994,9 @@ export default function EnergyCharts({
                               0.0% (DISCONNECTED)
                             </span>
                           ) : (
-                            <span style={{ 
-                              background: serviceRatio >= 90 ? 'rgba(16,185,129,0.15)' : (serviceRatio > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)'),
-                              color: serviceRatio >= 90 ? '#34d399' : (serviceRatio > 0 ? '#fbbf24' : '#f87171'),
+                            <span style={{
+                              background: serviceRatio >= 90 ? 'rgba(255,133,0,0.15)' : (serviceRatio > 0 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)'),
+                              color: serviceRatio >= 90 ? 'var(--energy-green)' : (serviceRatio > 0 ? '#fbbf24' : '#f87171'),
                               padding: '2px 6px',
                               borderRadius: 4,
                               fontWeight: 700

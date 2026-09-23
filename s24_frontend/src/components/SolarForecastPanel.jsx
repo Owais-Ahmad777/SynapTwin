@@ -37,7 +37,7 @@ export default function SolarForecastPanel({ solarForecast }) {
       <div className="panel-header">
         <div className="panel-title">
           <SunMedium size={16} color="#f59e0b" />
-          <span>Today's Solar Forecast vs Actual</span>
+          <span>Solar Forecast</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -128,16 +128,16 @@ export default function SolarForecastPanel({ solarForecast }) {
           <div style={{
             marginTop: 6,
             padding: '5px 10px',
-            background: 'rgba(56, 189, 248, 0.10)',
-            border: '1px solid rgba(56, 189, 248, 0.3)',
+            background: 'rgba(234, 88, 12, 0.08)',
+            border: '1px solid rgba(234, 88, 12, 0.35)',
             borderRadius: 4,
             fontSize: '10.5px',
-            color: '#bae6fd',
+            color: 'var(--text-secondary)',
             display: 'flex',
             alignItems: 'center',
             gap: 6,
           }}>
-            <Zap size={12} color="#38bdf8" />
+            <Zap size={12} color="#ea580c" />
             <span>
               <b>Grid Incomer Fault ({String(dStart).padStart(2, '0')}:00–{String(dEnd).padStart(2, '0')}:00):</b> Rooftop solar generation is unaffected (normal clear-sky output). Utility Grid Import is unavailable due to equipment failure until emergency restoration.
             </span>

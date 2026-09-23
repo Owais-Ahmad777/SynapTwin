@@ -21,6 +21,12 @@ Standard Planning Assumptions (Documented & Citable):
        optimizer/battery_health.py (2.5% fade per 100 cycles + 1.5%/yr calendar aging).
   4. Grid Carbon Factor:
      - 0.82 kg CO2 / kWh (Central Electricity Authority CEA baseline for Indian grid).
+   5. Per-Building Allocation (NEW):
+     - Per-building demand and solar shares are derived from each building's rated
+       peak load (peak_kw) and rooftop solar capacity (solar_kwp) as a fraction of
+       campus-wide totals (from real_campus_blocks() OSM-derived building data).
+       This is a proportional allocation of the campus-aggregate projection, not an
+       independently modeled per-building forecast.
 """
 
 from pathlib import Path
@@ -32,6 +38,11 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from optimizer.battery_health import BatteryHealthState
+
+try:
+    from data.synthetic_load import real_campus_blocks
+except ImportError:  # standalone execution from within s24_backend/data/
+    from synthetic_load import real_campus_blocks
 
 
 PROJECTED_DATA_DISCLAIMER = (
@@ -82,6 +93,30 @@ DAYS_PER_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 WEATHER_WEIGHTED_SOLAR_FACTOR = 0.45 * 1.05 + 0.30 * 0.82 + 0.15 * 0.55 + 0.10 * 0.25  # ~0.826
 
 
+def compute_building_shares() -> dict:
+    """
+    Returns {building_name: {"demand_share": float, "solar_share": float}} where
+    each share is that building's rated peak load (peak_kw) or rooftop solar
+    capacity (solar_kwp) as a fraction of the campus-wide total, sourced from
+    real_campus_blocks() so the two never drift apart. Shares sum to ~1.0
+    within each category (up to rounding).
+
+    This is a proportional-allocation assumption for fanning out the
+    campus-aggregate projection — not measured per-building data. See the
+    Honesty & Provenance Statement above (assumption 5).
+    """
+    blocks = real_campus_blocks()
+    total_peak = sum(b.peak_kw for b in blocks)
+    total_solar_kwp = sum(getattr(b, "solar_kwp", 0.0) for b in blocks)
+    return {
+        b.name: {
+            "demand_share": round(b.peak_kw / total_peak, 5) if total_peak > 0 else 0.0,
+            "solar_share": round(getattr(b, "solar_kwp", 0.0) / total_solar_kwp, 5) if total_solar_kwp > 0 else 0.0,
+        }
+        for b in blocks
+    }
+
+
 def generate_multiyear_projection(
     years: int = 5,
     solar_degradation_pct: float = 0.5,
@@ -105,7 +140,12 @@ def generate_multiyear_projection(
 
     yearly_summary = []
     monthly_trend = []
-    
+    per_building_yearly = []
+
+    # NEW (additive): per-building shares computed once; campus aggregates below
+    # are fanned out proportionally (see compute_building_shares docstring).
+    building_shares = compute_building_shares()
+
     cumulative_savings_inr = 0.0
     cumulative_co2_abated_kg = 0.0
     cumulative_solar_kwh = 0.0
@@ -203,6 +243,42 @@ def generate_multiyear_projection(
             "solar_degradation_factor": round(pv_factor, 4),
         })
 
+        # NEW (additive): fan the campus-aggregate year out per building.
+        # - Solar-driven avoided energy follows each building's solar_share.
+        # - Shared-battery useful discharge follows demand_share (buildings draw
+        #   the shared battery in proportion to their demand) — a blended-share
+        #   modelling choice, documented in the assumptions payload below.
+        # - Savings replicate the campus formula per building: baseline
+        #   (demand x tariff) minus optimized (import x tariff).
+        per_building_year = []
+        for b_name, shares in building_shares.items():
+            b_solar_kwh = year_solar_kwh * shares["solar_share"]
+            b_demand_kwh = year_demand_kwh * shares["demand_share"]
+            b_self_solar_kwh = b_solar_kwh * 0.88
+            b_battery_useful_kwh = (year_battery_throughput_kwh * 0.46) * shares["demand_share"]
+            b_grid_avoided_kwh = b_self_solar_kwh + b_battery_useful_kwh
+            b_grid_import_kwh = max(b_demand_kwh - b_grid_avoided_kwh, 0.0)
+            b_baseline_cost_inr = b_demand_kwh * effective_tariff
+            b_optimized_cost_inr = b_grid_import_kwh * effective_tariff
+            b_savings_inr = b_baseline_cost_inr - b_optimized_cost_inr
+            per_building_year.append({
+                "building": b_name,
+                "solar_kwh": round(b_solar_kwh, 1),
+                "demand_kwh": round(b_demand_kwh, 1),
+                "grid_avoided_kwh": round(b_grid_avoided_kwh, 1),
+                "grid_import_kwh": round(b_grid_import_kwh, 1),
+                "annual_savings_inr": round(b_savings_inr, 2),
+                "annual_savings_lakhs": round(b_savings_inr / 100000.0, 2),
+                "co2_abated_kg": round(b_grid_avoided_kwh * GRID_CO2_KG_PER_KWH, 1),
+                "demand_share": shares["demand_share"],
+                "solar_share": shares["solar_share"],
+            })
+        per_building_yearly.append({
+            "year": y,
+            "year_label": f"Year {y}",
+            "buildings": per_building_year,
+        })
+
     return {
         "status": "success",
         "data_type": "synthetic_projection",
@@ -216,6 +292,14 @@ def generate_multiyear_projection(
             "battery_aging_model": "Semi-empirical Li-ion NMC second-life degradation (optimizer/battery_health.py)",
             "grid_co2_factor_kg_kwh": GRID_CO2_KG_PER_KWH,
             "weather_distribution": "45% Clear / 30% Partly Cloudy / 15% Overcast / 10% Monsoon",
+            "per_building_allocation_method": (
+                "Per-building demand and solar shares are derived from each building's "
+                "rated peak load (peak_kw) and rooftop solar capacity (solar_kwp) as a "
+                "fraction of campus-wide totals (from real_campus_blocks() OSM-derived "
+                "building data). Shared-battery useful discharge is allocated by demand "
+                "share. This is a proportional allocation of the campus-aggregate "
+                "projection, not an independently modeled per-building forecast."
+            ),
         },
         "totals": {
             "total_years": years,
@@ -228,6 +312,7 @@ def generate_multiyear_projection(
         },
         "yearly_summary": yearly_summary,
         "monthly_trend": monthly_trend,
+        "per_building_yearly": per_building_yearly,
     }
 
 
@@ -239,3 +324,21 @@ if __name__ == "__main__":
     print(f"Total Projected Savings: INR {result['totals']['cumulative_savings_lakhs']} Lakhs")
     for row in result["yearly_summary"]:
         print(f"Year {row['year']}: Solar={row['solar_mwh']} MWh, Savings=INR {row['annual_savings_lakhs']}L, SoH={row['battery_soh_pct']}%, Tariff={row['effective_tariff_inr']}/kWh, Fairness={row['fairness_pct']}%")
+    # Per-building sanity check: splits must sum back to campus totals (within rounding).
+    for pb in result["per_building_yearly"]:
+        campus = result["yearly_summary"][pb["year"] - 1]
+        d_sum = round(sum(b["demand_kwh"] for b in pb["buildings"]), 1)
+        s_sum = round(sum(b["solar_kwh"] for b in pb["buildings"]), 1)
+        sv_sum = round(sum(b["annual_savings_inr"] for b in pb["buildings"]), 2)
+        d_share = round(sum(b["demand_share"] for b in pb["buildings"]), 4)
+        s_share = round(sum(b["solar_share"] for b in pb["buildings"]), 4)
+        print(f"Year {pb['year']} per-building check: demand {d_sum} vs {campus['campus_demand_kwh']} | "
+              f"solar {s_sum} vs {campus['solar_kwh']} | savings {sv_sum} vs {campus['annual_savings_inr']} | "
+              f"shares d={d_share} s={s_share}")
+    sample_names = [b["building"] for b in result["per_building_yearly"][0]["buildings"][:3]]
+    print(f"Sample buildings: {sample_names}")
+    for y_idx in (0, 4):
+        yr = result["per_building_yearly"][y_idx]
+        for b in yr["buildings"][:3]:
+            print(f"  Y{yr['year']} {b['building']}: solar={b['solar_kwh']} kWh, demand={b['demand_kwh']} kWh, "
+                  f"savings=INR {b['annual_savings_lakhs']}L")

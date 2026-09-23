@@ -11,6 +11,17 @@ day-to-day variance:
 Outputs:
   - s24_frontend/public/data/historical_30day.json
   - s24_backend/data/historical_30day.json
+  - s24_frontend/public/data/historical_30day_buildings.json (NEW: per-building hourly rows)
+  - s24_backend/data/historical_30day_buildings.json (NEW: per-building hourly rows)
+
+Per-building extension (additive only — no existing key renamed, removed, or reshaped):
+  - The simulation already emits per-building telemetry in sim["hourly"][h]["blocks"];
+    this script now also captures it.
+  - `per_building_hourly` (16 buildings x 720 hours = 11,520 rows) lives in the
+    separate historical_30day_buildings.json file so the main payload consumed by
+    existing clients stays small.
+  - `per_building_daily_summary` (480 rows) and `per_building_cumulative_totals`
+    (16 entries) are embedded in the main file under new top-level keys.
 """
 
 import os
@@ -74,6 +85,12 @@ def generate_30_days():
 
     days_summary = []
     hourly_records = []
+
+    # NEW (additive): per-building captures. Hourly rows go to a separate file;
+    # daily summaries + cumulative totals are embedded in the main payload.
+    per_building_hourly_records = []
+    per_building_daily_summary = []
+    per_building_cumulative_accum = {}
 
     cumulative_solar_kwh = 0.0
     cumulative_demand_kwh = 0.0
@@ -146,6 +163,27 @@ def generate_30_days():
                 "co2_avoided_hourly_kg": round(sol * 0.82, 2),
             })
 
+            # NEW (additive): capture the per-building telemetry the simulation
+            # already computed for this hour (both FAIRNESS and triage branches
+            # populate h_data["blocks"] for all 16 buildings).
+            for block in h_data.get("blocks", []):
+                b_load = block.get("load_kw", 0.0) or 0.0
+                b_solar = block.get("solar_kw", 0.0) or 0.0
+                b_alloc = block.get("allocated_kw", 0.0) or 0.0
+                per_building_hourly_records.append({
+                    "day": day_num,
+                    "hour": h_idx,
+                    "building": block.get("name", ""),
+                    "load_kw": b_load,
+                    "solar_kw": b_solar,
+                    "allocated_battery_kw": b_alloc,
+                    "deficit_kw": block.get("deficit_kw", 0.0) or 0.0,
+                    "critical_kw": block.get("critical_kw", 0.0) or 0.0,
+                    "service_ratio_pct": block.get("service_ratio_pct", 0.0) or 0.0,
+                    "grid_import_kw": round(max(0.0, b_load - b_solar - b_alloc), 2),
+                    "is_outage": is_out,
+                })
+
         # Grid power avoided = total clean energy supplied on campus (Solar PV + Second-Life Battery)
         grid_avoided_kwh = round(day_solar_kwh + day_battery_kwh, 1)
         day_co2_avoided_kg = round(grid_avoided_kwh * 0.82, 1)
@@ -182,9 +220,62 @@ def generate_30_days():
             "baseline_fairness_index": day_baseline_fairness,
         })
 
+        # NEW (additive): per-building daily summary for this day, derived from
+        # this day's 24 per-building hourly rows captured above.
+        day_building_accum = {}
+        for row in per_building_hourly_records:
+            if row["day"] != day_num:
+                continue
+            acc = day_building_accum.setdefault(row["building"], {
+                "load": 0.0, "solar": 0.0, "battery": 0.0,
+                "grid": 0.0, "ratio_sum": 0.0, "n": 0,
+            })
+            acc["load"] += row["load_kw"]
+            acc["solar"] += row["solar_kw"]
+            acc["battery"] += row["allocated_battery_kw"]
+            acc["grid"] += row["grid_import_kw"]
+            acc["ratio_sum"] += row["service_ratio_pct"]
+            acc["n"] += 1
+
+        for b_name, acc in day_building_accum.items():
+            n = acc["n"] or 1
+            per_building_daily_summary.append({
+                "day": day_num,
+                "day_name": cfg["day_name"],
+                "date_label": f"Day {day_num} ({cfg['day_name']})",
+                "building": b_name,
+                "total_load_kwh": round(acc["load"], 1),
+                "total_solar_kwh": round(acc["solar"], 1),
+                "total_battery_allocated_kwh": round(acc["battery"], 1),
+                "total_grid_import_kwh": round(acc["grid"], 1),
+                "avg_service_ratio_pct": round(acc["ratio_sum"] / n, 1),
+            })
+            cum = per_building_cumulative_accum.setdefault(b_name, {
+                "load": 0.0, "solar": 0.0, "battery": 0.0,
+                "grid": 0.0, "ratio_sum": 0.0, "n": 0,
+            })
+            cum["load"] += acc["load"]
+            cum["solar"] += acc["solar"]
+            cum["battery"] += acc["battery"]
+            cum["grid"] += acc["grid"]
+            cum["ratio_sum"] += acc["ratio_sum"]
+            cum["n"] += n
+
     # Overall 30-Day Cumulative Totals
     avg_fairness = round(sum(d["fairness_index"] for d in days_summary) / len(days_summary), 3)
     avg_baseline_fairness = round(sum(d["baseline_fairness_index"] for d in days_summary) / len(days_summary), 3)
+
+    # NEW (additive): 30-day per-building cumulative totals keyed by building name.
+    per_building_cumulative_totals = {}
+    for b_name, cum in per_building_cumulative_accum.items():
+        n = cum["n"] or 1
+        per_building_cumulative_totals[b_name] = {
+            "total_load_kwh": round(cum["load"], 1),
+            "total_solar_kwh": round(cum["solar"], 1),
+            "total_battery_allocated_kwh": round(cum["battery"], 1),
+            "total_grid_import_kwh": round(cum["grid"], 1),
+            "avg_service_ratio_pct": round(cum["ratio_sum"] / n, 1),
+        }
 
     final_payload = {
         "metadata": {
@@ -212,6 +303,22 @@ def generate_30_days():
         },
         "days": days_summary,
         "hourly": hourly_records,
+        "per_building_daily_summary": per_building_daily_summary,
+        "per_building_cumulative_totals": per_building_cumulative_totals,
+    }
+
+    # NEW (additive): per-building hourly rows live in a separate file so the
+    # main payload consumed by existing clients stays small.
+    buildings_payload = {
+        "metadata": {
+            "title": "SynapTwin 30-Day Per-Building Hourly Telemetry",
+            "institution": "Siksha 'O' Anusandhan (SOA) ITER Campus",
+            "total_days": 30,
+            "total_per_building_hourly_rows": len(per_building_hourly_records),
+            "data_mode": "SIMULATED / DIGITAL-TWIN DATA",
+            "attribution": "Per-building blocks captured from the SynapTwin Max-Min LP & Triage Physics Engine",
+        },
+        "per_building_hourly": per_building_hourly_records,
     }
 
     # Write output to frontend public directory and backend data directory
@@ -228,6 +335,17 @@ def generate_30_days():
         json.dump(final_payload, f, indent=2)
     print(f"Wrote backend static file: {backend_data}")
 
+    # NEW (additive): per-building hourly rows to both output directories.
+    out_buildings_frontend = frontend_public_data / "historical_30day_buildings.json"
+    with open(out_buildings_frontend, "w", encoding="utf-8") as f:
+        json.dump(buildings_payload, f, indent=2)
+    print(f"Wrote frontend per-building file: {out_buildings_frontend} (size: {out_buildings_frontend.stat().st_size / 1024:.1f} KB)")
+
+    out_buildings_backend = Path(__file__).resolve().parent / "historical_30day_buildings.json"
+    with open(out_buildings_backend, "w", encoding="utf-8") as f:
+        json.dump(buildings_payload, f, indent=2)
+    print(f"Wrote backend per-building file: {out_buildings_backend}")
+
     print("\nSummary of Generated 30-Day Performance:")
     print(f"  - Total Solar Generated: {cumulative_solar_kwh:,.1f} kWh")
     print(f"  - Total Campus Demand: {cumulative_demand_kwh:,.1f} kWh")
@@ -235,6 +353,9 @@ def generate_30_days():
     print(f"  - Total CO2 Avoided: {cumulative_co2_avoided_kg:,.1f} kg")
     print(f"  - Total Financial Savings: INR {cumulative_inr_saved:,.0f} (INR {cumulative_inr_saved/100000.0:.2f} Lakhs)")
     print(f"  - Outage Events: {total_outage_events} days (Days 8, 19, 26)")
+    print(f"  - Per-Building Hourly Rows: {len(per_building_hourly_records)} (16 buildings x 720 hours)")
+    print(f"  - Per-Building Daily Summaries: {len(per_building_daily_summary)}")
+    print(f"  - Per-Building Cumulative Entries: {len(per_building_cumulative_totals)}")
     print(f"  - Average Fairness: {avg_fairness} vs Baseline: {avg_baseline_fairness} (+{((avg_fairness-avg_baseline_fairness)/avg_baseline_fairness)*100:.1f}%)")
 
 if __name__ == "__main__":

@@ -1,26 +1,55 @@
-import React from 'react';
-import { 
-  Zap, Shield, AlertTriangle, BatteryCharging, 
-  Building2, HelpCircle, Activity, RotateCcw, Power, Award, Scale, Calendar 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Zap, Shield, AlertTriangle, BatteryCharging,
+  Building2, Activity, Power, HelpCircle,
+  Sun, Moon, User, Check
 } from 'lucide-react';
 import AlertCenter from './AlertCenter';
 
-export default function Header({ 
-  currentHour, 
+export default function Header({
+  currentHour,
   hourData,
   simParams,
-  isOutage, 
+  isOutage,
   isDisasterActive = false,
-  currentMode, 
-  batteryHealth, 
-  impactMetrics: _impactMetrics, 
-  currentRole, 
-  onRoleChange, 
+  currentMode,
+  batteryHealth,
+  impactMetrics: _impactMetrics,
+  currentRole,
+  onRoleChange,
+  theme = 'dark',
+  onToggleTheme,
+  uiProfile = 'admin',
+  onUiProfileChange,
+  onNavigate,
   onOpenPitch,
-  onOpenAudit,
-  onOpenCompare,
-  onResetDemoDefaults,
 }) {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+
+  // UI-ONLY: close the profile menu on outside click (same pattern as alerts)
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (profileRef.current && !profileRef.current.contains(event.target)) {
+        setProfileOpen(false);
+      }
+    }
+    if (profileOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [profileOpen]);
+
+  const handleSelectProfile = (id) => {
+    if (onUiProfileChange) onUiProfileChange(id);
+    if (id === 'admin') {
+      onRoleChange('admin');
+    } else if (id === 'supervisor' && currentRole === 'admin') {
+      onRoleChange('hostel_a');
+    }
+  };
   const allBuildings = [
     { id: 'admin', label: '🛡️ Campus Super-Admin (All 16 Buildings)' },
     { id: 'hostel_a', label: '🏢 ITER Boys Hostel 1' },
@@ -55,7 +84,7 @@ export default function Header({
           <div className="brand-title">
             <h1>
               SOA ITER Campus Energy Flexibility Twin
-              <span className="kpi-pill" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontSize: '10px', padding: '2px 8px' }}>
+              <span className="kpi-pill" style={{ background: 'var(--accent-soft)', color: 'var(--accent-strong)', fontSize: '10px', padding: '2px 8px' }}>
                 16 Buildings Active
               </span>
             </h1>
@@ -65,76 +94,82 @@ export default function Header({
           </div>
         </div>
 
-        {/* Group D: Action Buttons */}
+        {/* Group D: Utility cluster — always visible, in-flow (not floating) */}
         <div className="header-action-group">
-          {/* 30-Day History Standalone Tab Button */}
-          <button 
-            className="btn-secondary btn-header"
-            onClick={() => window.open('/?view=history', '_blank')}
-            style={{
-              borderColor: 'rgba(99, 102, 241, 0.4)',
-              color: '#818cf8',
-            }}
-            title="Open SynapTwin 30-Day Historical Trend & Multi-Day Optimization Analysis in a new browser tab"
-          >
-            <Calendar size={13} color="#818cf8" />
-            <span>30-Day History</span>
-          </button>
-
-          {/* Reset to Demo Defaults Safety Button */}
-          <button 
-            className="btn-secondary btn-header"
-            onClick={onResetDemoDefaults}
-            title="Reset all sandbox controls to default presentation state"
-          >
-            <RotateCcw size={12} />
-            <span>Demo Reset</span>
-          </button>
-
-          {/* Algorithmic Comparison Button */}
-          <button 
-            className="btn-secondary btn-header"
-            onClick={onOpenCompare}
-            style={{
-              borderColor: 'rgba(16, 185, 129, 0.4)',
-              color: '#34d399',
-            }}
-            title="Compare real algorithmic performance: Without SynapTwin Baseline vs. With SynapTwin Digital Twin"
-          >
-            <Scale size={13} color="#34d399" />
-            <span>Compare SynapTwin</span>
-          </button>
-
-          {/* Official Audit Certificate Button */}
-          <button 
-            className="btn-secondary btn-header"
-            onClick={onOpenAudit}
-            style={{
-              borderColor: 'rgba(56, 189, 248, 0.4)',
-              color: '#38bdf8',
-            }}
-            title="Open Official Compliance, Financial ROI & Cryptographic Audit Certificate"
-          >
-            <Award size={13} color="#38bdf8" />
-            <span>Audit Certificate</span>
-          </button>
-
-          {/* Simulated Alert Center (Trigger Button with Exact Badge + Dropdown Drawer + Push Toast) */}
-          <AlertCenter 
-            hourData={hourData}
-            simParams={simParams}
-            currentHour={currentHour}
-            isEmergency={isEmergency}
-          />
-
-          {/* Pitch Summary Button */}
-          <button 
-            className="btn-primary btn-header" 
-            onClick={onOpenPitch}
-          >
-            <HelpCircle size={13} />
-            <span>Judge Pitch</span>
-          </button>
+          <div className="st-util-cluster">
+            <AlertCenter
+              hourData={hourData}
+              simParams={simParams}
+              currentHour={currentHour}
+              isEmergency={isEmergency}
+              theme={theme}
+            />
+            <button
+              type="button"
+              className="btn-secondary btn-header"
+              onClick={onToggleTheme}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+              <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+            <div style={{ position: 'relative' }} ref={profileRef}>
+              <button
+                type="button"
+                className="btn-secondary btn-header"
+                onClick={() => setProfileOpen((v) => !v)}
+                title="Profile management"
+              >
+                <User size={13} />
+                <span>Profile</span>
+              </button>
+              {profileOpen && (
+                <div className="st-profile-menu">
+                  <div className="st-profile-menu-title">Profile Management</div>
+                  <button
+                    type="button"
+                    className={`st-profile-card ${uiProfile === 'admin' ? 'active' : ''}`}
+                    onClick={() => handleSelectProfile('admin')}
+                  >
+                    <b><Shield size={12} /> Admin {uiProfile === 'admin' && <Check size={12} />}</b>
+                    <span>Full command-center visibility</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`st-profile-card ${uiProfile === 'supervisor' ? 'active' : ''}`}
+                    onClick={() => handleSelectProfile('supervisor')}
+                  >
+                    <b><User size={12} /> Supervisor {uiProfile === 'supervisor' && <Check size={12} />}</b>
+                    <span>Supervise a single building</span>
+                  </button>
+                  {uiProfile === 'supervisor' && (
+                    <select
+                      value={currentRole}
+                      onChange={(e) => onRoleChange(e.target.value)}
+                      className="st-profile-building"
+                      aria-label="Supervised building"
+                    >
+                      {allBuildings.map((b) => (
+                        <option key={b.id} value={b.id}>{b.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  <div className="st-profile-current">
+                    Active: <b>{uiProfile === 'admin' ? 'Admin (all buildings)' : `Supervisor (${currentRole})`}</b>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn-primary btn-header"
+              onClick={() => (onOpenPitch ? onOpenPitch() : onNavigate && onNavigate('pitch'))}
+              title="Open the judge pitch"
+            >
+              <HelpCircle size={13} />
+              <span>Judge Pitch</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -143,29 +178,23 @@ export default function Header({
         {/* Group B: Status & Telemetry Chips */}
         <div className="header-telemetry-chips">
           {/* Grid Status Badge */}
-          <div 
+          <div
             className="kpi-pill status-chip"
             style={{
-              background: isOutage ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)',
-              color: isOutage ? '#f87171' : '#34d399',
-              border: isOutage ? '1px solid #ef4444' : '1px solid rgba(16, 185, 129, 0.4)',
-              boxShadow: isOutage ? '0 0 10px rgba(239, 68, 68, 0.3)' : 'none',
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--line)',
+              boxShadow: isOutage ? '0 0 10px rgba(239, 68, 68, 0.35)' : 'none',
             }}
             title={isOutage ? 'Grid is disconnected (Islanded mode active)' : 'Utility 11kV grid is connected normally'}
           >
-            <Power size={12} color={isOutage ? '#ef4444' : '#10b981'} />
+            <Power size={12} color={isOutage ? '#ef4444' : 'var(--ok-green)'} />
             <span>{isOutage ? 'GRID: CUT (OUTAGE)' : 'GRID: ON'}</span>
           </div>
 
           {/* Operating Mode Indicator */}
-          <div 
+          <div
             className={`mode-badge status-chip ${isEmergency ? 'triage' : 'fairness'}`}
-            style={{
-              background: isEmergency ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.12)',
-              color: isEmergency ? '#fca5a5' : '#34d399',
-              border: isEmergency ? '1px solid #ef4444' : '1px solid rgba(16, 185, 129, 0.3)',
-              boxShadow: isEmergency ? '0 0 16px rgba(239, 68, 68, 0.35)' : 'none',
-            }}
           >
             <div className={`live-dot ${isEmergency ? 'red' : 'green'}`}></div>
             {isEmergency ? (
@@ -175,38 +204,38 @@ export default function Header({
               </span>
             ) : (
               <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Activity size={13} color="#10b981" />
+                <Activity size={13} color="var(--ok-green)" />
                 <span>ROUTINE FAIRNESS</span>
               </span>
             )}
           </div>
 
           {/* Current Live Battery SoC Chip */}
-          <div 
-            className="kpi-pill status-chip" 
-            style={{ 
-              background: 'rgba(56, 189, 248, 0.12)', 
-              color: '#38bdf8', 
-              border: '1px solid rgba(56, 189, 248, 0.3)',
+          <div
+            className="kpi-pill status-chip"
+            style={{
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--line)',
             }}
             title="Current Live State-of-Charge (Instantaneous energy level stored in the battery right now)"
           >
-            <BatteryCharging size={13} />
+            <BatteryCharging size={13} color="var(--warning-amber)" />
             <span>SoC: {(hourData?.battery_soc_pct ?? 78.4).toFixed(1)}%</span>
           </div>
 
           {/* Current Live Battery SoH Chip */}
           {batteryHealth && (
-            <div 
-              className="kpi-pill status-chip" 
-              style={{ 
-                background: 'rgba(6, 182, 212, 0.12)', 
-                color: '#22d3ee', 
-                border: '1px solid rgba(6, 182, 212, 0.3)',
+            <div
+              className="kpi-pill status-chip"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--line)',
               }}
               title={`Current Live State-of-Health: ${batteryHealth.soh_pct}% | Duty Tier: ${batteryHealth.duty_tier}`}
             >
-              <Activity size={13} />
+              <Activity size={13} color="var(--ok-green)" />
               <span>SoH: {batteryHealth.soh_pct}% ({batteryHealth.duty_tier})</span>
             </div>
           )}
@@ -254,7 +283,7 @@ export default function Header({
             >
               <option value="" disabled>More Buildings...</option>
               {allBuildings.map(b => (
-                <option key={b.id} value={b.id} style={{ background: '#0f172a', color: '#f8fafc' }}>
+                <option key={b.id} value={b.id} style={{ background: theme === 'light' ? '#fffdf7' : '#0f172a', color: theme === 'light' ? '#1c1917' : '#f8fafc' }}>
                   {b.label}
                 </option>
               ))}

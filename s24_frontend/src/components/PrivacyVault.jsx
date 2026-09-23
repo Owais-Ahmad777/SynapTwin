@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Shield, Lock, Unlock, Eye, EyeOff, KeyRound, CheckCircle, Info, Search, Terminal, Activity } from 'lucide-react';
 
-export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, simData }) {
+export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, simData, telemetryOnly = false }) {
   const [privacyData, setPrivacyData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -88,11 +88,12 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
   );
 
   return (
-    <div className="panel-card">
+    <div className="panel-card trust">
+      {!telemetryOnly && (
       <div className="panel-header">
         <div className="panel-title">
           <Shield size={16} color="#38bdf8" />
-          <span>Cryptographic Privacy Vault &amp; Role Boundaries</span>
+          <span>Privacy Vault</span>
         </div>
 
         <span className="kpi-pill" style={{ 
@@ -105,8 +106,12 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
             : <><Unlock size={12} style={{ marginRight: 4 }} /> Full Super-Admin (16 Buildings)</>}
         </span>
       </div>
+      )}
 
       <div className="panel-body">
+        {/* UI-ONLY: telemetryOnly keeps just the 16-building telemetry grid */}
+        {!telemetryOnly && (
+        <>
         {/* Active Persona Banner */}
         <div style={{
           background: 'rgba(255, 255, 255, 0.02)',
@@ -192,27 +197,29 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
           </div>
         </div>
 
+        </>
+        )}
         {/* Rendered View Payload */}
         {isRedacted ? (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {/* Own Block Data */}
             <div style={{
-              background: 'rgba(16, 185, 129, 0.05)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
+              background: 'rgba(234, 88, 12, 0.07)',
+              border: '1px solid rgba(234, 88, 12, 0.3)',
               borderRadius: 'var(--radius-md)',
               padding: '14px',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#34d399', fontWeight: 700, marginBottom: 8, fontSize: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#c2410c', fontWeight: 700, marginBottom: 8, fontSize: '12px' }}>
                 <Eye size={14} />
                 <span>YOUR BUILDING TELEMETRY (DECRYPTED)</span>
               </div>
               {ownBlock ? (
                 <div style={{ fontSize: '12px', lineHeight: 1.7 }}>
-                  <div><b>Building Name:</b> <span style={{ color: '#f8fafc' }}>{ownBlock.name}</span></div>
-                  <div><b>Actual Demand:</b> <span style={{ color: '#38bdf8' }}>{ownBlock.load_kw.toFixed(1)} kW</span></div>
-                  <div><b>Rooftop Solar Gen:</b> <span style={{ color: '#fbbf24' }}>{ownBlock.solar_kw.toFixed(1)} kW</span></div>
-                  <div><b>Battery Allocation:</b> <span style={{ color: '#34d399' }}>+{ownBlock.allocated_kw.toFixed(1)} kW</span></div>
-                  <div><b>Net Deficit:</b> <span style={{ color: '#f87171' }}>{ownBlock.deficit_kw.toFixed(1)} kW</span></div>
+                  <div><b>Building Name:</b> <span style={{ color: 'var(--text-primary)' }}>{ownBlock.name}</span></div>
+                  <div><b>Actual Demand:</b> <span style={{ color: '#9a3412' }}>{ownBlock.load_kw.toFixed(1)} kW</span></div>
+                  <div><b>Rooftop Solar Gen:</b> <span style={{ color: '#b45309' }}>{ownBlock.solar_kw.toFixed(1)} kW</span></div>
+                  <div><b>Battery Allocation:</b> <span style={{ color: '#c2410c' }}>+{ownBlock.allocated_kw.toFixed(1)} kW</span></div>
+                  <div><b>Net Deficit:</b> <span style={{ color: '#dc2626' }}>{ownBlock.deficit_kw.toFixed(1)} kW</span></div>
                 </div>
               ) : (
                 <div style={{ color: '#94a3b8', fontSize: '12px' }}>Loading building telemetry...</div>
@@ -231,11 +238,11 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
                 <span>PEER BUILDINGS (REDACTED AGGREGATE)</span>
               </div>
               <div style={{ fontSize: '12px', lineHeight: 1.7 }}>
-                <div><b>Protected Peer Count:</b> <span style={{ color: '#f8fafc' }}>{peerAggregate.count} campus buildings</span></div>
-                <div><b>Total Peer Demand:</b> <span style={{ color: '#38bdf8' }}>{peerAggregate.total_load_kw} kW</span></div>
-                <div><b>Total Peer Solar:</b> <span style={{ color: '#fbbf24' }}>{peerAggregate.total_solar_kw || 0} kW</span></div>
-                <div><b>Total Peer Battery Alloc:</b> <span style={{ color: '#34d399' }}>{peerAggregate.total_allocated_kw} kW</span></div>
-                <div style={{ color: '#94a3b8', fontSize: '11px', marginTop: 4, lineHeight: 1.4 }}>
+                <div><b>Protected Peer Count:</b> <span style={{ color: 'var(--text-primary)' }}>{peerAggregate.count} campus buildings</span></div>
+                <div><b>Total Peer Demand:</b> <span style={{ color: '#9a3412' }}>{peerAggregate.total_load_kw} kW</span></div>
+                <div><b>Total Peer Solar:</b> <span style={{ color: '#b45309' }}>{peerAggregate.total_solar_kw || 0} kW</span></div>
+                <div><b>Total Peer Battery Alloc:</b> <span style={{ color: '#c2410c' }}>{peerAggregate.total_allocated_kw} kW</span></div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: 4, lineHeight: 1.4 }}>
                   🔒 Raw room/lab readings from other 15 buildings masked to guarantee zero inter-block surveillance.
                 </div>
               </div>
@@ -244,13 +251,13 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
         ) : (
           /* Admin View (All 16 Buildings) */
           <div style={{
-            background: 'rgba(59, 130, 246, 0.05)',
-            border: '1px solid rgba(59, 130, 246, 0.2)',
+            background: 'rgba(234, 88, 12, 0.06)',
+            border: '1px solid rgba(234, 88, 12, 0.3)',
             borderRadius: 'var(--radius-md)',
             padding: '14px',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#60a5fa', fontWeight: 700, fontSize: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#c2410c', fontWeight: 700, fontSize: '12px' }}>
                 <Eye size={14} />
                 <span>ALL 16 CAMPUS BUILDINGS TELEMETRY (SUPER-ADMIN UNREDACTED)</span>
               </div>
@@ -285,28 +292,29 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
               paddingRight: 4,
             }}>
               {displayedBlocks.map((b, idx) => (
-                <div key={idx} style={{ 
-                  background: 'rgba(0,0,0,0.3)', 
-                  padding: '8px 10px', 
-                  borderRadius: 6, 
-                  border: '1px solid rgba(255,255,255,0.06)',
+                <div key={idx} style={{
+                  background: 'rgba(232, 155, 53, 0.55)',
+                  backdropFilter: 'blur(6px)',
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(124, 45, 18, 0.6)',
                   fontSize: '11px',
                 }}>
-                  <b style={{ color: '#f8fafc', display: 'block', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <b style={{ color: '#000000', display: 'block', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {b.name}
                   </b>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
-                    <span>Demand:</span> <span style={{ color: '#38bdf8' }}>{b.load_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
+                    <span>Demand:</span> <span style={{ color: '#431407' }}>{b.load_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
-                    <span>Solar:</span> <span style={{ color: '#fbbf24' }}>{b.solar_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
+                    <span>Solar:</span> <span style={{ color: '#7c2d12' }}>{b.solar_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
-                    <span>Battery Alloc:</span> <span style={{ color: '#10b981' }}>+{b.allocated_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
+                    <span>Battery Alloc:</span> <span style={{ color: '#9a3412' }}>+{b.allocated_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8', borderTop: '1px dashed rgba(255,255,255,0.06)', paddingTop: 2, marginTop: 2 }}>
-                    <span>Service Ratio:</span> 
-                    <b style={{ color: ((b.solar_kw + b.allocated_kw) / Math.max(0.001, b.load_kw)) < 0.999 ? '#f87171' : '#34d399', fontFamily: 'monospace' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000', borderTop: '1px dashed rgba(0,0,0,0.25)', paddingTop: 2, marginTop: 2 }}>
+                    <span>Service Ratio:</span>
+                    <b style={{ color: ((b.solar_kw + b.allocated_kw) / Math.max(0.001, b.load_kw)) < 0.999 ? '#991b1b' : '#431407', fontFamily: 'monospace' }}>
                       {(b.service_ratio_pct !== undefined 
                         ? Number(b.service_ratio_pct).toFixed(1) 
                         : (b.load_kw > 0.001 ? Math.min(100.0, ((b.solar_kw + b.allocated_kw) / b.load_kw) * 100.0).toFixed(1) : '100.0'))}%

@@ -4,7 +4,7 @@ import {
   X, Zap, IndianRupee, Leaf, Battery, Lock, Sparkles, Building2, ExternalLink, Scale
 } from 'lucide-react';
 
-export default function AuditModal({ isOpen, onClose, simData }) {
+export default function AuditModal({ isOpen, onClose, simData, embedded = false }) {
   const [auditData, setAuditData] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -65,19 +65,19 @@ export default function AuditModal({ isOpen, onClose, simData }) {
   };
 
   return (
-    <div 
-      className="modal-backdrop" 
-      onClick={onClose}
+    <div
+      className="modal-backdrop"
+      onClick={embedded ? undefined : onClose}
       style={{
-        position: 'fixed',
+        position: embedded ? 'static' : 'fixed',
         top: 0, left: 0, right: 0, bottom: 0,
-        background: 'rgba(0, 0, 0, 0.82)',
-        backdropFilter: 'blur(8px)',
+        background: embedded ? 'transparent' : 'rgba(0, 0, 0, 0.82)',
+        backdropFilter: embedded ? 'none' : 'blur(8px)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 20,
+        padding: embedded ? 0 : 20,
       }}
     >
       <div 
@@ -89,7 +89,7 @@ export default function AuditModal({ isOpen, onClose, simData }) {
           borderRadius: 14,
           width: '100%',
           maxWidth: 820,
-          maxHeight: '90vh',
+          maxHeight: embedded ? 'none' : '90vh',
           overflowY: 'auto',
           boxShadow: '0 25px 60px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.2)',
           display: 'flex',

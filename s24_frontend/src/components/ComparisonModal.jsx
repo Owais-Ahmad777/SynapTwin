@@ -4,7 +4,7 @@ import {
   IndianRupee, Leaf, Award, ArrowRight, TrendingUp, BarChart2 
 } from 'lucide-react';
 
-export default function ComparisonModal({ isOpen, onClose, simData }) {
+export default function ComparisonModal({ isOpen, onClose, simData, embedded = false }) {
   if (!isOpen) return null;
 
   const comp = simData?.scenario_comparison || {
@@ -43,19 +43,19 @@ export default function ComparisonModal({ isOpen, onClose, simData }) {
   const d = comp.delta;
 
   return (
-    <div 
-      className="modal-backdrop" 
-      onClick={onClose}
+    <div
+      className="modal-backdrop"
+      onClick={embedded ? undefined : onClose}
       style={{
-        position: 'fixed',
+        position: embedded ? 'static' : 'fixed',
         top: 0, left: 0, right: 0, bottom: 0,
-        background: 'rgba(0, 0, 0, 0.85)',
-        backdropFilter: 'blur(8px)',
+        background: embedded ? 'transparent' : 'rgba(0, 0, 0, 0.85)',
+        backdropFilter: embedded ? 'none' : 'blur(8px)',
         zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 20,
+        padding: embedded ? 0 : 20,
       }}
     >
       <div 
@@ -67,7 +67,7 @@ export default function ComparisonModal({ isOpen, onClose, simData }) {
           borderRadius: 14,
           width: '100%',
           maxWidth: 880,
-          maxHeight: '90vh',
+          maxHeight: embedded ? 'none' : '90vh',
           overflowY: 'auto',
           boxShadow: '0 25px 60px rgba(0,0,0,0.9), 0 0 30px rgba(56, 189, 248, 0.2)',
           display: 'flex',

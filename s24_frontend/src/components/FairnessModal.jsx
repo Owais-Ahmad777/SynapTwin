@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Cpu, CheckCircle2, Calculator, Info, ShieldCheck, ShieldAlert } from 'lucide-react';
+import Gauge from './Gauge';
 
 export default function FairnessModal({ isOpen, onClose, hourData, batteryHealth }) {
   if (!isOpen || !hourData) return null;
@@ -42,17 +43,18 @@ export default function FairnessModal({ isOpen, onClose, hourData, batteryHealth
           </button>
         </div>
 
-        {/* Core Mathematical Definition */}
+        {/* Core Mathematical Definition — linen inset on the dark modal */}
         <div style={{
-          background: isTriage ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.06)',
-          border: `1px solid ${isTriage ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.25)'}`,
+          background: isTriage ? 'rgba(239, 68, 68, 0.08)' : '#f7f3ee',
+          border: `1px solid ${isTriage ? 'rgba(239, 68, 68, 0.3)' : 'rgba(22, 19, 15, 0.16)'}`,
+          borderTop: `3px solid ${isTriage ? '#f04438' : 'var(--accent)'}`,
           borderRadius: 'var(--radius-md)',
           padding: '14px 16px',
-          color: '#f8fafc',
+          color: isTriage ? '#f8fafc' : '#1c1917',
           fontSize: '13px',
           lineHeight: 1.6,
         }}>
-          <div style={{ fontWeight: 700, color: isTriage ? '#fca5a5' : '#34d399', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontWeight: 700, color: isTriage ? '#fca5a5' : '#b34a00', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
             <ShieldCheck size={16} />
             <span>{isTriage ? 'The Lexicographical Safety Principle:' : 'The Max-Min Allocation Principle:'}</span>
           </div>
@@ -72,11 +74,12 @@ export default function FairnessModal({ isOpen, onClose, hourData, batteryHealth
 
         {/* Live Worked Example for Current Hour */}
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 12, flexWrap: 'wrap' }}>
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
               <Calculator size={14} color="#38bdf8" />
               <span>Live Worked Example (Hour {currentHour}:00 Telemetry)</span>
             </span>
+            {!isTriage && <Gauge value={minServiceRatio} size={72} label="fairness" />}
             <span className="kpi-pill" style={{ 
               background: isTriage ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.15)', 
               color: isTriage ? '#f87171' : '#34d399',
@@ -89,19 +92,19 @@ export default function FairnessModal({ isOpen, onClose, hourData, batteryHealth
 
           {/* Shared Local-Resource Equity Banner */}
           <div style={{
-            background: 'rgba(56, 189, 248, 0.05)',
-            border: '1px solid rgba(56, 189, 248, 0.2)',
+            background: 'rgba(234, 88, 12, 0.07)',
+            border: '1px solid rgba(234, 88, 12, 0.3)',
             borderRadius: 'var(--radius-sm)',
             padding: '7px 12px',
             fontSize: '11px',
-            color: '#cbd5e1',
+            color: 'var(--text-secondary)',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
             lineHeight: 1.4,
             marginBottom: 10,
           }}>
-            <Info size={14} color="#38bdf8" style={{ flexShrink: 0 }} />
+            <Info size={14} color="#ea580c" style={{ flexShrink: 0 }} />
             <span>
               Bars/values here show each building's <b>OWN solar + battery share only</b> (excludes grid import). They represent local-resource equity, not whether demand is actually being met — see <b>'Full Energy Mix'</b> for real-time reliability (Unserved Outage Deficit).
             </span>
