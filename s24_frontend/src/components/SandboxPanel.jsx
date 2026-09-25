@@ -424,13 +424,17 @@ export default function SandboxPanel({
               style={{
                 width: '100%',
                 marginTop: '6px',
-                padding: '7px 10px',
-                background: '#fffdf7',
+                padding: '9px 12px',
+                background: 'rgba(10, 10, 11, 0.55)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
                 border: `1px solid ${currentDisasterConfig.color}60`,
-                borderRadius: 'var(--radius-sm)',
-                color: '#1c1917',
+                borderRadius: 12,
+                color: '#faf8f5',
                 fontSize: '12px',
                 fontWeight: 600,
+                outline: 'none',
+                cursor: 'pointer',
               }}
               title="Select a disaster scenario to simulate: Monsoon waterlogging, Cyclone alert, Electrical fire isolation, Grid transformer fault, or Heatwave AC surge."
             >
@@ -551,13 +555,17 @@ export default function SandboxPanel({
                   className="custom-select"
                   style={{
                     width: '100%',
-                    padding: '5px 8px',
-                    background: '#070c14',
+                    padding: '8px 12px',
+                    background: 'rgba(10, 10, 11, 0.55)',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
                     border: '1px solid rgba(239, 68, 68, 0.4)',
-                    borderRadius: 'var(--radius-sm)',
-                    color: '#f8fafc',
+                    borderRadius: 12,
+                    color: '#faf8f5',
                     fontSize: '11px',
                     fontWeight: 600,
+                    outline: 'none',
+                    cursor: 'pointer',
                   }}
                   title="Select which campus building main electrical riser to isolate"
                 >

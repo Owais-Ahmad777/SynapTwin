@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Zap, Scale, IndianRupee } from 'lucide-react';
+import { Sun, Zap, Scale, IndianRupee, ArrowUpRight } from 'lucide-react';
 import CampusMap from '../components/CampusMap';
 import EnergyCharts from '../components/EnergyCharts';
 import EnergyFlowDiagram from '../components/EnergyFlowDiagram';
@@ -72,7 +72,6 @@ export default function HomePage(props) {
       ? Math.min(100, ((bSolar + bAlloc) / bLoad) * 100)
       : 100);
     const bDaily = buildingDaily || { solar: 0, load: 0, battery: 0 };
-    const bClean = Number(bDaily.solar || 0) + Number(bDaily.battery || 0);
     const bCards = [
       {
         id: 'solar',
@@ -94,13 +93,6 @@ export default function HomePage(props) {
         label: 'Max-Min Fairness',
         value: `${Number(bRatio).toFixed(1)}%`,
         sub: 'solar + battery coverage',
-      },
-      {
-        id: 'roi',
-        icon: IndianRupee, color: '#b45309',
-        label: 'Financial ROI (ToU)',
-        value: `${bClean.toFixed(0)} kWh`,
-        sub: 'clean energy today',
       },
     ];
 
@@ -124,7 +116,7 @@ export default function HomePage(props) {
                 const Icon = c.icon;
                 return (
                   <button key={c.id} type="button" className="st-float-card" onClick={() => onOpenInsight(c.id)}>
-                    <span className="st-float-icon" style={{ color: c.color, borderColor: `${c.color}55`, background: `${c.color}14` }}>
+                    <span className="st-float-icon" style={{ color: '#0a0a0b', borderColor: '#ff5c1a', background: '#ff5c1a' }}>
                       <Icon size={15} />
                     </span>
                     <span className="st-float-text">
@@ -132,7 +124,7 @@ export default function HomePage(props) {
                       <span className="st-float-value">{c.value}</span>
                       <span className="st-float-sub">{c.sub}</span>
                     </span>
-                    <span className="st-float-cta">Open →</span>
+                    <ArrowUpRight size={15} className="st-float-cta" />
                   </button>
                 );
               })}
@@ -160,8 +152,8 @@ export default function HomePage(props) {
     <div className="st-home">
       {/* PlayDay lives in the floating button (App shell) on home/driveev/disaster */}
       {/* HERO: map is the centerpiece */}
-      <section className="st-hero" aria-label="Campus digital twin map">
-        <div className="st-map-wrap map-hero">
+      <section className="st-hero st-hero-admin" aria-label="Campus digital twin map">
+        <div className="st-map-wrap map-hero map-hero-admin">
           <CampusMap
             geoData={geoData}
             hourData={hourData}
@@ -175,7 +167,7 @@ export default function HomePage(props) {
               const Icon = c.icon;
               return (
                 <button key={c.id} type="button" className="st-float-card" onClick={() => onOpenInsight(c.id)}>
-                  <span className="st-float-icon" style={{ color: c.color, borderColor: `${c.color}55`, background: `${c.color}14` }}>
+                  <span className="st-float-icon" style={{ color: '#0a0a0b', borderColor: '#ff5c1a', background: '#ff5c1a' }}>
                     <Icon size={15} />
                   </span>
                   <span className="st-float-text">
@@ -183,7 +175,7 @@ export default function HomePage(props) {
                     <span className="st-float-value">{c.value}</span>
                     <span className="st-float-sub">{c.sub}</span>
                   </span>
-                  <span className="st-float-cta">Open →</span>
+                  <ArrowUpRight size={15} className="st-float-cta" />
                 </button>
               );
             })}

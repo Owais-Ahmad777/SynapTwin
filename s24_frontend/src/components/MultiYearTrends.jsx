@@ -168,12 +168,12 @@ export default function MultiYearTrends() {
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: 14,
           }}>
-            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="panel-card" style={{ borderRadius: 10, padding: '12px 16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <IndianRupee size={13} color="var(--energy-green)" />
+                <IndianRupee size={13} color="#ea580c" />
                 <span>Cumulative {years}-Year Savings</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
                 ₹{totals.cumulative_savings_lakhs} <span style={{ fontSize: '13px' }}>Lakhs</span>
               </div>
               <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -181,12 +181,12 @@ export default function MultiYearTrends() {
               </div>
             </div>
 
-            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="panel-card" style={{ borderRadius: 10, padding: '12px 16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Sun size={13} color="var(--energy-green)" />
+                <Sun size={13} color="#ea580c" />
                 <span>Total Clean Solar Generation</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
                 {totals.cumulative_solar_mwh} <span style={{ fontSize: '13px' }}>MWh</span>
               </div>
               <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -194,12 +194,12 @@ export default function MultiYearTrends() {
               </div>
             </div>
 
-            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="panel-card" style={{ borderRadius: 10, padding: '12px 16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Leaf size={13} color="var(--energy-green)" />
+                <Leaf size={13} color="#ea580c" />
                 <span>Carbon Emissions Abated</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--energy-green)', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
                 {totals.cumulative_co2_abated_tonnes} <span style={{ fontSize: '13px' }}>Tonnes</span>
               </div>
               <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>
@@ -207,12 +207,12 @@ export default function MultiYearTrends() {
               </div>
             </div>
 
-            <div style={{ background: 'rgba(234, 88, 12, 0.07)', border: '1px solid rgba(234, 88, 12, 0.3)', borderRadius: 10, padding: '12px 16px' }}>
+            <div className="panel-card" style={{ borderRadius: 10, padding: '12px 16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Battery size={13} color="var(--battery-cyan)" />
+                <Battery size={13} color="#ea580c" />
                 <span>Year {years} Battery Health (SoH)</span>
               </div>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--battery-cyan)', marginTop: 4 }}>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>
                 {totals.final_battery_soh_pct}% <span style={{ fontSize: '12px' }}>({totals.final_battery_duty_tier})</span>
               </div>
               <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: 2 }}>

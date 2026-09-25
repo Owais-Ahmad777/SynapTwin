@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Check, X } from 'lucide-react';
 
 // UI-ONLY per-building 3D viewer (supervisor site). Renders this building's
 // real footprint (from campus GeoJSON) as a dark-navy floor-by-floor massing
@@ -291,21 +290,10 @@ export default function BuildingViewer3D({
   }
 
   const typeLabel = blockType ? blockType.charAt(0).toUpperCase() + blockType.slice(1) : 'Building';
-  const highlights = [
-    { ok: solar > 0.5, label: solar > 0.5 ? 'Rooftop array generating' : 'Array idle (night / overcast)' },
-    { ok: alloc > 0.1, label: alloc > 0.1 ? `Battery feeding ${alloc.toFixed(1)} kW` : 'No battery dispatch this hour' },
-    { ok: !isOutage, label: isOutage ? 'Islanded on stored energy' : 'Utility grid connected' },
-    { ok: !isFireIso, label: isFireIso ? 'Riser ISOLATED (fire protocol)' : 'Electrical riser normal' },
-  ];
   const scores = [
     { label: 'SERVICE COVERAGE', sub: 'Solar + battery share of demand', val: ratio },
     { label: 'SOLAR SHARE', sub: 'Own rooftop vs demand', val: solarShare },
     { label: 'GRID INDEPENDENCE', sub: 'Demand met without imports', val: independence },
-  ];
-  const systems = [
-    { label: 'Shared Battery Bank', value: `${(hourData?.battery_available_kw ?? 120).toFixed(0)} kW ready` },
-    { label: 'Utility Grid', value: isOutage ? 'CUT (islanding)' : 'Connected' },
-    { label: 'Active Protocol', value: hourData?.mode === 'DISASTER_TRIAGE' ? 'Disaster triage' : 'Routine fairness' },
   ];
 
   return (
@@ -320,41 +308,32 @@ export default function BuildingViewer3D({
         <span>{load.toFixed(1)} kW now • {solar.toFixed(1)} kW solar</span>
       </div>
 
-      {/* Bottom risk cards */}
-      <div className="bld-risks">
-        <div className="bld-risk">
-          <span>Fire Risk</span>
-          <b>{isFireIso ? '10' : '1'}/10</b>
-          <span>{isFireIso ? 'Active isolation' : 'Minimal fire factor'}</span>
-        </div>
-        <div className="bld-risk">
-          <span>Outage Risk</span>
-          <b>{isOutage ? '9' : '2'}/10</b>
-          <span>{isOutage ? 'Islanded operation' : 'Stable grid feed'}</span>
-        </div>
-      </div>
-
-      {/* Right rail */}
+      {/* Right rail: metrics card → campus systems (Addendum 9 rewrite B3) */}
       <div className="bld-side">
-        <div className="bld-side-title">Building Highlights</div>
-        {highlights.map((h) => (
-          <div key={h.label} className="bld-check">
-            <span className={`bld-dot ${h.ok ? 'ok' : 'bad'}`}>{h.ok ? <Check size={11} /> : <X size={11} />}</span>
-            <span>{h.label}</span>
+        <div className="bld-metrics-card">
+          {scores.map((s) => (
+            <div key={s.label} className="bld-score">
+              <div className="bld-score-head"><span>{s.label}</span><b>{s.val.toFixed(0)}</b></div>
+              <div className="bld-score-sub">{s.sub}</div>
+              <div className="bld-bar"><div className="bld-fill" style={{ width: `${Math.min(100, Math.max(0, s.val))}%` }} /></div>
+            </div>
+          ))}
+          {/* Risk pair relocated from the viewer floor: 2-up row.
+              Values stay live-derived (1/10 + Minimal fire factor and 2/10 +
+              Stable grid feed in the default calm state). */}
+          <div className="bld-risks">
+            <div className="bld-risk">
+              <span>Fire Risk</span>
+              <b>{isFireIso ? '10' : '1'}/10</b>
+              <span>{isFireIso ? 'Active isolation' : 'Minimal fire factor'}</span>
+            </div>
+            <div className="bld-risk">
+              <span>Outage Risk</span>
+              <b>{isOutage ? '9' : '2'}/10</b>
+              <span>{isOutage ? 'Islanded operation' : 'Stable grid feed'}</span>
+            </div>
           </div>
-        ))}
-        {scores.map((s) => (
-          <div key={s.label} className="bld-score">
-            <div className="bld-score-head"><span>{s.label}</span><b>{s.val.toFixed(0)}</b></div>
-            <div className="bld-score-sub">{s.sub}</div>
-            <div className="bld-bar"><div className="bld-fill" style={{ width: `${Math.min(100, Math.max(0, s.val))}%` }} /></div>
-          </div>
-        ))}
-        <div className="bld-side-title" style={{ marginTop: 6 }}>Campus Systems</div>
-        {systems.map((s) => (
-          <div key={s.label} className="bld-sys"><span>{s.label}</span><b>{s.value}</b></div>
-        ))}
-        <div className="bld-hint">Drag to orbit • Scroll to zoom • Click a floor • PlayDay steps floors</div>
+        </div>
       </div>
     </div>
   );

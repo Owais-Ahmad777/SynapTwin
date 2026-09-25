@@ -226,10 +226,11 @@ export default function AlertCenter({
         }}
         title="Open Simulated Emergency Alert Center & Session Notification Stream"
       >
-        <Bell size={13} color={isEmergency ? '#ffffff' : (isOpen ? '#fff7ed' : '#ffb703')} />
+        <Bell size={14} color={isEmergency ? '#ffffff' : (isOpen ? '#fff7ed' : '#ffb703')} />
         <span>Alerts</span>
         {totalCount > 0 && (
-          <span 
+          <span
+            className={isEmergency ? 'pulse-live-icon' : undefined}
             style={{
               background: isEmergency ? '#ffffff' : '#ffb703',
               color: isEmergency ? '#dc2626' : '#431407',
@@ -237,11 +238,15 @@ export default function AlertCenter({
               fontWeight: 800,
               borderRadius: '10px',
               padding: '1px 5px',
-              marginLeft: '2px',
               lineHeight: '1',
+              minWidth: 16,
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
+              position: 'absolute',
+              top: -7,
+              right: -7,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
             }}
           >
             {totalCount}
@@ -652,19 +657,6 @@ export default function AlertCenter({
                           <IconComponent size={13} color={meta.color} />
                           <span>{alert.title}</span>
                         </span>
-
-                        {/* Scenario Tag inside card */}
-                        <span style={{
-                          background: 'rgba(255, 183, 3, 0.18)',
-                          border: '1px solid rgba(180, 83, 9, 0.45)',
-                          color: '#b45309',
-                          fontSize: '9px',
-                          fontWeight: 700,
-                          padding: '1px 5px',
-                          borderRadius: '3px',
-                        }}>
-                          {getDisasterTag(alert.disaster_type)}
-                        </span>
                       </div>
 
                       <span style={{ fontSize: '9.5px', color: secondaryText, fontFamily: 'monospace' }}>
@@ -685,9 +677,9 @@ export default function AlertCenter({
                       color: secondaryText,
                     }}>
                       <span style={{ color: 'var(--energy-green)', fontWeight: 600 }}>
-                        📍 {alert.affected_building}
+                        📍 {alert.affected_building} • {getDisasterTag(alert.disaster_type)}
                       </span>
-                      <span>Tier {alert.tier || 'N/A'} Priority</span>
+                      <span>Tier {alert.tier || 'N/A'}</span>
                     </div>
                   </div>
                 );

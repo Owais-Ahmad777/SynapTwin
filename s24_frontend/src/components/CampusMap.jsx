@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Layers, X, Box } from 'lucide-react';
+import { Layers, X, Box, Maximize } from 'lucide-react';
 
 // Free, no-API-key satellite imagery (real aerial photography — Esri World Imagery).
 // This replaces the old abstract/schematic dark basemap with actual, geographically
@@ -41,6 +41,17 @@ function boundsRing(b) {
   ];
 }
 
+// UI-ONLY (Addendum 9 A2): extend bounds from Polygon or MultiPolygon geometry.
+function extendBoundsFromGeometry(bounds, geometry) {
+  if (!geometry || !geometry.coordinates) return;
+  const polys = geometry.type === 'MultiPolygon' ? geometry.coordinates : [geometry.coordinates];
+  polys.forEach((poly) => {
+    (poly[0] || []).forEach((coord) => {
+      try { bounds.extend(coord); } catch (e) { /* ignore malformed ring */ }
+    });
+  });
+}
+
 export default function CampusMap({
   geoData,
   currentHour = 12,
@@ -55,9 +66,16 @@ export default function CampusMap({
   const markersRef = useRef([]);
   const popupRef = useRef(null);
   const handlersBoundRef = useRef(false);
+  // UI-ONLY (Addendum 9 A2): auto-fit runs once on initial load only, so later
+  // data ticks never yank the camera after the user pans/zooms.
+  const initialFitDoneRef = useRef(false);
 
   const [clickedBuilding, setClickedBuilding] = useState(null);
   const [is3D, setIs3D] = useState(true);
+  // Flips when the GL map finishes loading so the data effect re-syncs layers
+  // onto the live map instance (StrictMode remount + fetch races otherwise
+  // leave the canvas empty).
+  const [mapReady, setMapReady] = useState(false);
 
   // Campus coordinates: SOA ITER Campus, Bhubaneswar (centroid of all 16 buildings: 20.2475° N, 85.8035° E)
   const CAMPUS_CENTER = [85.8035, 20.2475]; // MapLibre uses [lon, lat]
@@ -81,6 +99,29 @@ export default function CampusMap({
     return false;
   };
 
+  // UI-ONLY flagship matcher (Addendum 9 A2): C-Block pilot building, same
+  // guard style as the block-letter rules in matchBlock.
+  const matchesCBlock = (candidateName) => {
+    const n = normName(candidateName);
+    if (!n) return false;
+    if (n.includes('c-block') || n.includes('block c')) return true;
+    if (n.includes('academic') && /(^|[^a-z])c([^a-z]|$)/.test(n)) return true;
+    return false;
+  };
+
+  // UI-ONLY explicit reset (Addendum 9 A2): zoom back out to the full campus.
+  const fitFullCampus = () => {
+    const map = mapInstanceRef.current;
+    if (!map || !geoData) return;
+    try {
+      const enriched = buildEnrichedGeoJSON();
+      const bounds = new maplibregl.LngLatBounds();
+      enriched.features.forEach((f) => extendBoundsFromGeometry(bounds, f.geometry));
+      map.fitBounds(bounds, { padding: 16 });
+    } catch (e) {
+      console.warn('[CampusMap] Could not fit full campus:', e);
+    }
+  };
   // ---- Building -> block telemetry matcher (same rules as the previous renderer) ----
   const matchBlock = (name) => {
     const blocks = hourData?.blocks || [];
@@ -211,8 +252,9 @@ export default function CampusMap({
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+    // UI-ONLY: corner +/-/compass and attribution pill removed per design —
+    // zoom stays available via scroll/pinch + the "Full Campus" reset button.
+    // (Esri World Imagery + © OpenStreetMap contributors, ODbL.)
 
     popupRef.current = new maplibregl.Popup({ closeButton: true, closeOnClick: true, maxWidth: '260px' });
 
@@ -220,6 +262,7 @@ export default function CampusMap({
       mapLoadedRef.current = true;
       mapInstanceRef.current = map;
       setIs3D((v) => v);
+      setMapReady(true);
     });
 
     return () => {
@@ -256,23 +299,30 @@ export default function CampusMap({
     enriched.features.forEach((f) => {
       (f.geometry.coordinates[0] || []).forEach((coord) => campusBounds.extend(coord));
     });
-    const hole = expandBounds(campusBounds, 0.0007);
-    const roam = expandBounds(campusBounds, 0.0012);
-    map.setMaxBounds(roam);
-    const maskData = {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        properties: {},
-        geometry: {
-          type: 'Polygon',
-          coordinates: [
-            [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
-            boundsRing(hole),
-          ],
-        },
-      }],
-    };
+    let maskData = null;
+    if (!campusBounds.isEmpty()) {
+      const hole = expandBounds(campusBounds, 0.0007);
+      const roam = expandBounds(campusBounds, 0.0012);
+      try {
+        map.setMaxBounds(roam);
+      } catch (e) {
+        console.warn('[CampusMap] Could not set roam bounds:', e);
+      }
+      maskData = {
+        type: 'FeatureCollection',
+        features: [{
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: [
+              [[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]],
+              boundsRing(hole),
+            ],
+          },
+        }],
+      };
+    }
 
     const applyLayers = () => {
       const src = map.getSource('campus-buildings');
@@ -280,15 +330,17 @@ export default function CampusMap({
         src.setData(enriched);
       } else {
         map.addSource('campus-buildings', { type: 'geojson', data: enriched, generateId: true });
-        map.addSource('campus-mask', { type: 'geojson', data: maskData });
-        // Dim-mask sits above satellite but below every building layer, so
-        // roads/trees/cars stay vivid inside campus and fade outside it.
-        map.addLayer({
-          id: 'area-dim',
-          type: 'fill',
-          source: 'campus-mask',
-          paint: { 'fill-color': '#000000', 'fill-opacity': 0.55 },
-        });
+        if (maskData) {
+          map.addSource('campus-mask', { type: 'geojson', data: maskData });
+          // Dim-mask sits above satellite but below every building layer, so
+          // roads/trees/cars stay vivid inside campus and fade outside it.
+          map.addLayer({
+            id: 'area-dim',
+            type: 'fill',
+            source: 'campus-mask',
+            paint: { 'fill-color': '#000000', 'fill-opacity': 0.55 },
+          });
+        }
 
         map.addLayer({
           id: 'buildings-fill',
@@ -336,10 +388,12 @@ export default function CampusMap({
             'text-field': ['get', 'resolved_name'],
             'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             'text-size': 12,
-            'text-offset': [0, -1.6],
+            'text-offset': [0, -2],
             'text-anchor': 'top',
-            'text-allow-overlap': true,
-            'text-ignore-placement': true,
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-padding': 30,
+            'text-max-width': 8,
           },
           paint: {
             'text-color': '#ffffff',
@@ -385,15 +439,24 @@ export default function CampusMap({
             blockData: fBlock,
           });
         }
-      } else {
+      } else if (!initialFitDoneRef.current) {
+        // UI-ONLY default view (Addendum 9 A2): center/zoom on the C-Block
+        // flagship pilot — not the full-campus bounding box. Runs once on
+        // initial load; later ticks and user pans are never overridden.
+        // "View full campus" (fitFullCampus) remains the explicit zoom-out.
+        initialFitDoneRef.current = true;
         try {
+          const cblock = enriched.features.find((f) => matchesCBlock(f.properties?.resolved_name || ''));
           const bounds = new maplibregl.LngLatBounds();
-          enriched.features.forEach((f) => {
-            (f.geometry.coordinates[0] || []).forEach((coord) => bounds.extend(coord));
-          });
-          map.fitBounds(bounds, { padding: 24, duration: 0 });
+          if (cblock) {
+            extendBoundsFromGeometry(bounds, cblock.geometry);
+            map.fitBounds(bounds, { padding: 48, maxZoom: 19, duration: 0 });
+          } else {
+            enriched.features.forEach((f) => extendBoundsFromGeometry(bounds, f.geometry));
+            map.fitBounds(bounds, { padding: 16, duration: 0 });
+          }
         } catch (e) {
-          console.warn('[CampusMap] Could not fit bounds:', e);
+          console.warn('[CampusMap] Could not fit default bounds:', e);
         }
       }
 
@@ -501,13 +564,13 @@ export default function CampusMap({
         const lat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
         addPointMarker(
           [lon, lat],
-          `<div style="background:#ef4444;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 0 16px #ef4444,0 0 30px #f87171;display:flex;align-items:center;justify-content:center;color:white;font-size:15px;">🔥</div>`,
+          `<div class="pulse-live-icon" style="background:#ef4444;width:30px;height:30px;border-radius:50%;border:2px solid white;box-shadow:0 0 16px #ef4444,0 0 30px #f87171;display:flex;align-items:center;justify-content:center;color:white;font-size:15px;">🔥</div>`,
           `<div style="font-family:'Inter',sans-serif;font-size:12px;"><b style="color:#ef4444;">🔥 Electrical Fire Fault Isolation</b><div style="color:#0f172a;font-weight:700;margin-top:2px;">${fireFeature.properties?.name || isolatedName}</div><div style="color:#475569;margin-top:4px;font-size:11px;">Main Riser: <b style="color:#ef4444;">DISCONNECTED</b><br/>Battery Power: <b style="color:#059669;">+18.4 kW Redirected</b></div></div>`
         );
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geoData, hourData, focusName]);
+  }, [geoData, hourData, focusName, mapReady]);
 
   return (
     <div className="panel-card" style={{ height: '100%', position: 'relative' }}>
@@ -533,6 +596,19 @@ export default function CampusMap({
           >
             <Box size={12} /> {is3D ? '3D' : '2D'}
           </button>
+          <button
+            onClick={fitFullCampus}
+            title="Zoom back out to the full 16-building campus"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              background: 'rgba(255,255,255,0.06)',
+              color: '#94a3b8',
+              border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
+              padding: '3px 8px', cursor: 'pointer', fontSize: '11px',
+            }}
+          >
+            <Maximize size={12} /> Full Campus
+          </button>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }}></span>
             Hostel 1 (Exporter)
@@ -553,32 +629,7 @@ export default function CampusMap({
       </div>
 
       <div className="panel-body" style={{ padding: 0, position: 'relative' }}>
-        <div className="map-container" ref={mapContainerRef} style={{ width: '100%', height: '100%', minHeight: 420 }}>
-          {/* Map Overlay Legend */}
-          <div className="map-legend">
-            <div style={{ fontWeight: 700, color: '#f8fafc', marginBottom: 2 }}>SOA ITER 16-Building Map</div>
-            <div className="legend-item">
-              <div className="legend-dot" style={{ background: '#f59e0b' }}></div>
-              <span>Hostel 1 (Single-story net solar exporter)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-dot" style={{ background: '#ea580c' }}></div>
-              <span>Hostel 7 (6-story heavy net importer)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-dot" style={{ background: '#b45309' }}></div>
-              <span>C-Block (Academic daytime peak load)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-dot" style={{ background: '#78716c' }}></div>
-              <span>13 Other Real Buildings (heights OSM-verified where tagged, estimated otherwise)</span>
-            </div>
-            <div className="legend-item">
-              <div className="legend-dot" style={{ background: '#f59e0b' }}></div>
-              <span>Shared 2nd-Life Battery (120 kW / 360 kWh)</span>
-            </div>
-          </div>
-
+        <div className="map-container" ref={mapContainerRef} style={{ width: '100%', minHeight: 420 }}>
           {/* Click-to-Detail Floating Side Card */}
           {clickedBuilding && (
             <div

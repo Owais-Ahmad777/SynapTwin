@@ -271,12 +271,12 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
                   onChange={(e) => setSearchFilter(e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#090e17',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: 4,
-                    padding: '4px 8px 4px 26px',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    padding: '6px 8px 6px 26px',
                     fontSize: '11px',
-                    color: '#f8fafc',
+                    color: 'var(--text-primary)',
                     outline: 'none',
                   }}
                 />
@@ -293,28 +293,28 @@ export default function PrivacyVault({ currentRole = 'admin', currentHour = 12, 
             }}>
               {displayedBlocks.map((b, idx) => (
                 <div key={idx} style={{
-                  background: 'rgba(232, 155, 53, 0.55)',
-                  backdropFilter: 'blur(6px)',
-                  padding: '8px 10px',
-                  borderRadius: 6,
-                  border: '1px solid rgba(124, 45, 18, 0.6)',
+                  background: 'rgba(234, 88, 12, 0.07)',
+                  padding: '10px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid rgba(234, 88, 12, 0.3)',
                   fontSize: '11px',
+                  color: 'var(--text-secondary)',
                 }}>
-                  <b style={{ color: '#000000', display: 'block', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <b style={{ color: 'var(--text-primary)', display: 'block', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {b.name}
                   </b>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-                    <span>Demand:</span> <span style={{ color: '#431407' }}>{b.load_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Demand:</span> <span style={{ color: '#9a3412' }}>{b.load_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-                    <span>Solar:</span> <span style={{ color: '#7c2d12' }}>{b.solar_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Solar:</span> <span style={{ color: '#b45309' }}>{b.solar_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000' }}>
-                    <span>Battery Alloc:</span> <span style={{ color: '#9a3412' }}>+{b.allocated_kw.toFixed(1)} kW</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Battery Alloc:</span> <span style={{ color: '#c2410c' }}>+{b.allocated_kw.toFixed(1)} kW</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#000000', borderTop: '1px dashed rgba(0,0,0,0.25)', paddingTop: 2, marginTop: 2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed var(--border-subtle)', paddingTop: 2, marginTop: 2 }}>
                     <span>Service Ratio:</span>
-                    <b style={{ color: ((b.solar_kw + b.allocated_kw) / Math.max(0.001, b.load_kw)) < 0.999 ? '#991b1b' : '#431407', fontFamily: 'monospace' }}>
+                    <b style={{ color: ((b.solar_kw + b.allocated_kw) / Math.max(0.001, b.load_kw)) < 0.999 ? '#dc2626' : '#c2410c', fontFamily: 'monospace' }}>
                       {(b.service_ratio_pct !== undefined 
                         ? Number(b.service_ratio_pct).toFixed(1) 
                         : (b.load_kw > 0.001 ? Math.min(100.0, ((b.solar_kw + b.allocated_kw) / b.load_kw) * 100.0).toFixed(1) : '100.0'))}%

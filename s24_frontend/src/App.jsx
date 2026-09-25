@@ -16,6 +16,8 @@ import ComparisonModal from './components/ComparisonModal';
 import HistoryView from './components/HistoryView';
 import MultiYearTrends from './components/MultiYearTrends';
 import Sidebar from './components/Sidebar';
+import { allBuildings } from './data/buildings';
+import LoginPage from './components/LoginPage';
 import InsightDrawer from './components/InsightDrawer';
 import HomePage from './pages/HomePage';
 import DriveEVPage from './pages/DriveEVPage';
@@ -31,6 +33,7 @@ import BuildingMonthlyTrend from './components/BuildingMonthlyTrend';
 import BuildingProjectionPanel from './components/BuildingProjectionPanel';
 import BuildingCertificate from './components/BuildingCertificate';
 import BuildingCompare from './components/BuildingCompare';
+import { BuildingSolarChart, BuildingDemandChart, BuildingFairnessTable } from './components/BuildingInsightGraphs';
 
 const VALID_PAGES = ['home', 'driveev', 'disaster', 'compare', 'audit', 'certificate', 'pitch', 'history30', 'future5y', 'settings'];
 
@@ -89,7 +92,19 @@ export default function App() {
   const [geoData, setGeoData] = useState(null);
   const [trajectoryData, setTrajectoryData] = useState([]);
   const [currentHour, setCurrentHour] = useState(12); // Default to hour 12 (midday)
-  const [currentRole, setCurrentRole] = useState('admin');
+  // UI-ONLY session (Addendum 4): role is fixed at login, no in-app switching.
+  // Persisted so a refresh doesn't force re-login mid-demo. Demo auth only.
+  const [session, setSession] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem('synaptwin-session-v1');
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (s && (s.role === 'admin' || ROLE_BUILDING_MAP[s.role])) return s;
+    } catch (e) { /* ignore */ }
+    return null;
+  });
+  const currentRole = session?.role || 'admin';
+  const uiProfile = currentRole === 'admin' ? 'admin' : 'supervisor';
   const [isPitchOpen, setIsPitchOpen] = useState(false);
   const [isFairnessOpen, setIsFairnessOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
@@ -99,8 +114,8 @@ export default function App() {
 
   // UI-ONLY shell state (navigation / drawers / profiles). No backend impact.
   const [activePage, setActivePage] = useState(getInitialPage);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [uiProfile, setUiProfile] = useState('admin');
+  const [navOpen, setNavOpen] = useState(false);
+  const [railExpanded, setRailExpanded] = useState(false);
   const [insight, setInsight] = useState(null); // 'solar' | 'demand' | 'fairness' | 'roi' | null
   const [theme, setTheme] = useState('dark'); // 'dark' | 'light' — UI chrome only
 
@@ -115,6 +130,7 @@ export default function App() {
     if (!VALID_PAGES.includes(page)) return;
     setActivePage(page);
     setInsight(null);
+    setNavOpen(false);
     try {
       const url = new URL(window.location.href);
       url.searchParams.set('page', page);
@@ -123,9 +139,10 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Simulation Parameters for the Interactive Sandbox (Full Presentation Scenario)
+  // Simulation Parameters for the Interactive Sandbox (calm default: no
+  // disaster on load — disaster scenarios are opt-in via the Sandbox panel).
   const DEFAULT_SIM_PARAMS = {
-    is_disaster_active: true,
+    is_disaster_active: false,
     disaster_type: 'monsoon_waterlogging',
     outage_hours: [19, 20, 21],
     hazard_hour: 20,
@@ -333,6 +350,26 @@ export default function App() {
   const buildingName = isBuildingMode ? ROLE_BUILDING_MAP[currentRole] : null;
   const buildingBlock = isBuildingMode ? findBlock(hourData?.blocks, buildingName) : null;
 
+  // UI-ONLY identity chip label (Addendum 4 §3): read-only, fixed by session.
+  const identityLabel = currentRole === 'admin' ? 'Admin' : `${ROLE_BUILDING_MAP[currentRole] || currentRole} · Supervisor`;
+  const identityKind = currentRole === 'admin' ? 'admin' : 'supervisor';
+
+  // UI-ONLY session handoff (Addendum 4 §2/§4). Demo auth only, no backend.
+  const handleLogin = (next) => {
+    try { window.localStorage.setItem('synaptwin-session-v1', JSON.stringify(next)); } catch (e) { /* ignore */ }
+    setSession(next);
+    setActivePage('home');
+    setInsight(null);
+    setNavOpen(false);
+  };
+  const handleLogout = () => {
+    try { window.localStorage.removeItem('synaptwin-session-v1'); } catch (e) { /* ignore */ }
+    setSession(null);
+    setActivePage('home');
+    setInsight(null);
+    setNavOpen(false);
+  };
+
   // UI-ONLY daily sums + 24h series aggregated from already-fetched hourly
   // simulation blocks (same summation the KPI banner already does for campus).
   let buildingDaily = { solar: 0, load: 0, battery: 0, grid: 0 };
@@ -372,7 +409,6 @@ export default function App() {
     return <HistoryView />;
   }
 
-  const modeLabel = hourData?.mode === 'DISASTER_TRIAGE' ? 'DISASTER TRIAGE' : 'ROUTINE FAIRNESS';
   const finDaily = simData?.impact_metrics?.daily_inr_saved || simData?.financial_metrics?.daily_inr_saved || 21262;
   const finMonthly = simData?.impact_metrics?.monthly_inr_saved || simData?.financial_metrics?.monthly_inr_saved || 637860;
   const finAnnual = simData?.impact_metrics?.annual_inr_saved || simData?.financial_metrics?.annual_inr_saved || 7760630;
@@ -532,16 +568,43 @@ export default function App() {
     }
   };
 
+  // UI-ONLY auth gate (Addendum 4 §2): unauthenticated sessions render ONLY
+  // the login screen — dashboard, header, and rail never mount until login.
+  if (!session) {
+    return (
+      <LoginPage
+        buildings={allBuildings.filter((b) => b.id !== 'admin')}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
   return (
     <div className="app-container">
-      <div className={`st-shell ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
+      <div className={`st-shell${navOpen ? ' nav-open' : ''}${railExpanded ? ' rail-expanded' : ''}`}>
+        <button
+          type="button"
+          className="st-hamburger"
+          onClick={() => setNavOpen((v) => !v)}
+          aria-label={navOpen ? 'Close navigation' : 'Open navigation'}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
+        {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
         <Sidebar
           activePage={effectivePage}
           onNavigate={handleNavigate}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-          modeLabel={modeLabel}
           buildingMode={isBuildingMode}
+          theme={theme}
+          onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          identityLabel={identityLabel}
+          identityKind={identityKind}
+          onLogout={handleLogout}
+          onRailExpand={setRailExpanded}
         />
         <div className={`st-main ${activePage === 'home' ? 'page-home' : ''}`}>
           {/* 1. Global Header with Anchored Alert Center */}
@@ -555,14 +618,9 @@ export default function App() {
             currentMode={hourData?.mode}
             batteryHealth={simData?.battery_health}
             impactMetrics={simData?.impact_metrics}
-            currentRole={currentRole}
-            onRoleChange={setCurrentRole}
             theme={theme}
-            onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-            uiProfile={uiProfile}
-            onUiProfileChange={setUiProfile}
-            onNavigate={handleNavigate}
-            onOpenPitch={() => setIsPitchOpen(true)}
+            identityLabel={identityLabel}
+            identityKind={identityKind}
           />
 
           {/* 2. Main Dashboard Content */}
@@ -591,52 +649,81 @@ export default function App() {
         />
       )}
 
-      {/* Floating quick-insight drawers (existing components, unchanged data) */}
+      {/* Floating quick-insight drawers: per-building site renders building-
+          scoped graphs, admin site keeps the campus graphs (single-graph mode:
+          no tab/mode options, heading + graph only). */}
       <InsightDrawer
         open={insight === 'solar'}
         title={insightMeta.solar.title}
-        subtitle={insightMeta.solar.sub}
+        subtitle={isBuildingMode ? `Rooftop Solar PV • ${buildingName} live telemetry` : insightMeta.solar.sub}
         onClose={() => setInsight(null)}
       >
-        <SolarForecastPanel solarForecast={simData?.solar_forecast} />
+        {isBuildingMode ? (
+          <BuildingSolarChart
+            buildingName={buildingName}
+            hourly={simData?.hourly || []}
+            solarForecast={simData?.solar_forecast}
+            currentHour={currentHour}
+          />
+        ) : (
+          <SolarForecastPanel solarForecast={simData?.solar_forecast} />
+        )}
       </InsightDrawer>
 
       <InsightDrawer
         open={insight === 'demand'}
         title={insightMeta.demand.title}
-        subtitle={insightMeta.demand.sub}
+        subtitle={isBuildingMode ? `${buildingName} demand vs 1h-lookahead prediction ±3.8% MAPE` : insightMeta.demand.sub}
         onClose={() => setInsight(null)}
         width={980}
       >
-        <EnergyCharts
-          hourlyData={simData?.hourly}
-          currentHour={currentHour}
-          hourData={hourData}
-          trajectoryData={trajectoryData}
-          demandAnalytics={simData?.demand_analytics}
-          daysInService={simParams.days_in_service}
-          currentRole={currentRole}
-          initialTab="demand_pred"
-        />
+        {isBuildingMode ? (
+          <BuildingDemandChart
+            buildingName={buildingName}
+            hourly={simData?.hourly || []}
+            currentHour={currentHour}
+          />
+        ) : (
+          <EnergyCharts
+            hourlyData={simData?.hourly}
+            currentHour={currentHour}
+            hourData={hourData}
+            trajectoryData={trajectoryData}
+            demandAnalytics={simData?.demand_analytics}
+            daysInService={simParams.days_in_service}
+            currentRole={currentRole}
+            initialTab="demand_pred"
+            visibleTabs={['demand_pred']}
+          />
+        )}
       </InsightDrawer>
 
       <InsightDrawer
         open={insight === 'fairness'}
         title={insightMeta.fairness.title}
-        subtitle={insightMeta.fairness.sub}
+        subtitle={isBuildingMode ? `${buildingName} allocation & satisfaction ledger` : insightMeta.fairness.sub}
         onClose={() => setInsight(null)}
         width={980}
       >
-        <EnergyCharts
-          hourlyData={simData?.hourly}
-          currentHour={currentHour}
-          hourData={hourData}
-          trajectoryData={trajectoryData}
-          demandAnalytics={simData?.demand_analytics}
-          daysInService={simParams.days_in_service}
-          currentRole={currentRole}
-          initialTab="fairness_table"
-        />
+        {isBuildingMode ? (
+          <BuildingFairnessTable
+            buildingName={buildingName}
+            hourly={simData?.hourly || []}
+            currentHour={currentHour}
+          />
+        ) : (
+          <EnergyCharts
+            hourlyData={simData?.hourly}
+            currentHour={currentHour}
+            hourData={hourData}
+            trajectoryData={trajectoryData}
+            demandAnalytics={simData?.demand_analytics}
+            daysInService={simParams.days_in_service}
+            currentRole={currentRole}
+            initialTab="fairness_table"
+            visibleTabs={['fairness_table']}
+          />
+        )}
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
           <button type="button" className="btn-primary" style={{ padding: '8px 14px', fontSize: 12 }} onClick={() => { setInsight(null); setIsFairnessOpen(true); }}>
             Open worked math modal →

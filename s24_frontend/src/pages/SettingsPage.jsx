@@ -9,7 +9,7 @@ export default function SettingsPage({ currentRole, currentHour, simData }) {
     <div className="st-page">
       <div className="st-page-head">
         <div className="st-eyebrow">Access Control</div>
-        <h2 className="st-page-title">Telemetry</h2>
+        <h2 className="st-page-title">Security Status</h2>
         <p className="st-page-sub">Security and access control.</p>
       </div>
 

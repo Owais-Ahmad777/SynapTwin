@@ -3,10 +3,12 @@ import {
   ResponsiveContainer, ComposedChart, AreaChart, Area, BarChart, Bar, 
   LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ReferenceLine 
 } from 'recharts';
-import { 
-  BarChart3, LineChart as LineChartIcon, Battery, Activity, 
-  Layers, TrendingUp, Play, RotateCcw, AlertTriangle, Zap, CheckCircle2, ShieldAlert, Sparkles, Building2, Table, Info, Calculator 
+import {
+  BarChart3, LineChart as LineChartIcon, Battery, Activity,
+  Layers, TrendingUp, Play, RotateCcw, AlertTriangle, Zap, CheckCircle2, ShieldAlert, Sparkles, Building2, Table, Info, Calculator
 } from 'lucide-react';
+import Gauge from './Gauge';
+import { DEMAND_FORECAST_MULTIPLIERS } from '../data/forecastModel';
 
 // Exact 15 Active Campus Buildings Target List
 const TARGET_15_BUILDINGS = [
@@ -176,32 +178,7 @@ export default function EnergyCharts({
   });
 
   // Prepare actual vs predicted demand curve with genuine lag at inflection points and exact MAPE calibration
-  const DEMAND_FORECAST_MULTIPLIERS = [
-    0.982,  // 00:00: -1.8% (overnight noise)
-    1.020,  // 01:00: +2.0%
-    0.978,  // 02:00: -2.2%
-    1.020,  // 03:00: +2.0%
-    0.982,  // 04:00: -1.8%
-    1.018,  // 05:00: +1.8%
-    0.942,  // 06:00: -5.8% (morning ramp start lag: under-predicting rising load)
-    0.923,  // 07:00: -7.7% (morning ramp acceleration lag: under-predicting rising load)
-    0.938,  // 08:00: -6.2% (morning peak spike lag: ~90 kW under-prediction)
-    0.965,  // 09:00: -3.5% (morning plateau catchup lag)
-    1.022,  // 10:00: +2.2% (midday plateau)
-    0.978,  // 11:00: -2.2%
-    1.022,  // 12:00: +2.2%
-    1.086,  // 13:00: +8.6% (lunch drop overshoot: over-predicting during sudden load drop, ~70 kW)
-    0.942,  // 14:00: -5.8% (post-lunch recovery lag: under-predicting quick rebound, ~74 kW)
-    1.022,  // 15:00: +2.2% (afternoon plateau)
-    0.980,  // 16:00: -2.0%
-    1.020,  // 17:00: +2.0%
-    1.070,  // 18:00: +7.0% (evening decline lag: over-predicting during sudden drop, ~65 kW)
-    1.060,  // 19:00: +6.0% (evening decline lag: over-predicting, ~43 kW)
-    1.053,  // 20:00: +5.3% (evening decline lag: over-predicting, ~34 kW)
-    1.073,  // 21:00: +7.3% (night transition lag: over-predicting, ~26 kW)
-    0.980,  // 22:00: -2.0% (night settling)
-    1.020,  // 23:00: +2.0%
-  ];
+  // (multipliers live in src/data/forecastModel.js, shared with per-building graphs).
 
   const demandSeries = hourlyData.map((h, i) => {
     const actual = demandAnalytics?.actual_demand_curve?.[i] ?? h.blocks?.reduce((acc, b) => acc + (b.load_kw || 0), 0) ?? 150;
@@ -285,6 +262,47 @@ export default function EnergyCharts({
     };
   });
 
+  // Building-balance series identity: distinct hues + non-color cues shared by
+  // bars, legend chips, and tooltip swatches (Addendum 6).
+  const BLOCK_SERIES = [
+    { key: 'solar', label: 'Solar PV (kW)', color: '#ffb800', pattern: 'blkSolarHatch' },
+    { key: 'allocated', label: 'Battery Share (kW)', color: '#22c9b0', pattern: 'blkBatDots' },
+    { key: 'deficit', label: 'Grid Supply (kW)', color: '#ff4d5e' },
+    { key: 'load', label: 'Demand (kW)', color: '#9a9a9e', hollow: true },
+  ];
+  const blockMeta = (dataKey) => BLOCK_SERIES.find((s) => s.key === dataKey) || null;
+
+  const BlockSwatch = ({ entry, size = 'md' }) => {
+    const w = size === 'md' ? 14 : 12;
+    const h = size === 'md' ? 10 : 9;
+    if (!entry) return null;
+    if (entry.pattern) {
+      return (
+        <svg width={w} height={h} style={{ flexShrink: 0 }}>
+          <rect x="0.5" y="0.5" width={w - 1} height={h - 1} rx="2" fill={`url(#${entry.pattern})`} stroke={entry.color} strokeWidth="1" />
+        </svg>
+      );
+    }
+    return (
+      <span style={{
+        width: w - 2, height: h - 1, borderRadius: 2, flexShrink: 0, display: 'inline-block',
+        background: entry.hollow ? 'transparent' : entry.color,
+        border: `2px solid ${entry.color}`,
+      }} />
+    );
+  };
+
+  const BlocksLegend = () => (
+    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', fontSize: 11, paddingTop: 10 }}>
+      {BLOCK_SERIES.map((s) => (
+        <span key={s.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+          <BlockSwatch entry={s} />
+          <span>{s.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+
   // Custom Chart Tooltip with support for Full Building Names and Demand Forecast Delta
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
@@ -321,9 +339,14 @@ export default function EnergyCharts({
                 </div>
               );
             }
+            const meta = blockMeta(item.dataKey);
+            const rowColor = meta ? meta.color : item.color;
             return (
-              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: item.color, margin: '3px 0' }}>
-                <span>{item.name}:</span>
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: rowColor, margin: '3px 0' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <BlockSwatch entry={meta} size="sm" />
+                  <span>{item.name}:</span>
+                </span>
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
                   {item.value} {item.unit || (activeTab === 'battery' ? '%' : 'kW')}
                 </span>
@@ -347,7 +370,7 @@ export default function EnergyCharts({
               </span>
             </div>
           )}
-          {dataObj?.deficit !== undefined && (
+          {(dataObj?.deficit !== undefined && activeTab !== 'blocks') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: isOutageMode ? '#f87171' : 'var(--energy-green)' }}>
                 <span>{isOutageMode ? 'Deficit / Unmet:' : 'Grid-Covered (kW):'}</span>
@@ -402,9 +425,10 @@ export default function EnergyCharts({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {/* Normal Mode vs Outage Simulation Mode Toggle */}
+          {/* Normal Mode vs Outage Simulation Mode Toggle (UI-ONLY: hidden in
+              single-graph mode alongside the tab switcher — heading + graph only) */}
           <div style={{
-            display: 'inline-flex',
+            display: TABS.length > 1 ? 'inline-flex' : 'none',
             alignItems: 'center',
             background: 'rgba(0, 0, 0, 0.45)',
             borderRadius: 'var(--radius-sm)',
@@ -703,9 +727,9 @@ export default function EnergyCharts({
                 <span style={{ marginLeft: 8 }}>&bull; Hour: <b style={{ color: 'var(--text-primary)' }}>{String(currentHour).padStart(2, '0')}:00</b></span>
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
-                <span>Total Demand: <b style={{ color: '#9a3412' }}>{blockSeries.reduce((acc, b) => acc + b.load, 0).toFixed(1)} kW</b></span>
-                <span>Total Solar: <b style={{ color: '#b45309' }}>{blockSeries.reduce((acc, b) => acc + b.solar, 0).toFixed(1)} kW</b></span>
-                <span>Battery Dispatched: <b style={{ color: '#c2410c' }}>{blockSeries.reduce((acc, b) => acc + b.allocated, 0).toFixed(1)} kW</b></span>
+                <span>Total Demand: <b style={{ color: '#9a9a9e' }}>{blockSeries.reduce((acc, b) => acc + b.load, 0).toFixed(1)} kW</b></span>
+                <span>Total Solar: <b style={{ color: '#ffb800' }}>{blockSeries.reduce((acc, b) => acc + b.solar, 0).toFixed(1)} kW</b></span>
+                <span>Battery Dispatched: <b style={{ color: '#22c9b0' }}>{blockSeries.reduce((acc, b) => acc + b.allocated, 0).toFixed(1)} kW</b></span>
               </div>
             </div>
 
@@ -734,12 +758,24 @@ export default function EnergyCharts({
                       dy={4} 
                     />
                     <YAxis stroke="#64748b" tick={{ fontSize: 10, fill: '#94a3b8' }} unit=" kW" width={55} />
+                    <defs>
+                      <pattern id="blkSolarHatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                        <rect width="6" height="6" fill="#ffb800" />
+                        <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(0,0,0,0.22)" strokeWidth="1.5" />
+                      </pattern>
+                      <pattern id="blkBatDots" width="7" height="7" patternUnits="userSpaceOnUse">
+                        <rect width="7" height="7" fill="#22c9b0" />
+                        <circle cx="2" cy="2" r="1.1" fill="rgba(0,0,0,0.25)" />
+                        <circle cx="5.5" cy="5.5" r="1.1" fill="rgba(0,0,0,0.25)" />
+                      </pattern>
+                    </defs>
                     <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10, position: 'relative', bottom: -5 }} />
+                    <Legend content={<BlocksLegend />} />
 
-                    <Bar dataKey="load" name="Demand (kW)" fill="#c2410c" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                    <Bar dataKey="solar" name="Solar PV (kW)" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={16} />
-                    <Bar dataKey="allocated" name="Battery Share (kW)" fill="#dc2626" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Bar dataKey="solar" stackId="supply" name="Solar PV (kW)" fill="url(#blkSolarHatch)" maxBarSize={16} />
+                    <Bar dataKey="allocated" stackId="supply" name="Battery Share (kW)" fill="url(#blkBatDots)" maxBarSize={16} />
+                    <Bar dataKey="deficit" stackId="supply" name="Grid Supply (kW)" fill="#ff4d5e" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                    <Line type="monotone" dataKey="load" name="Demand (kW)" stroke="#9a9a9e" strokeWidth={2} strokeDasharray="5 4" dot={false} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -796,6 +832,7 @@ export default function EnergyCharts({
 
               {/* Live Animated Telemetry HUD */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '11px', flexWrap: 'wrap' }}>
+                <Gauge value={currentAnimPoint.soh_pct} size={60} label="SoH" />
                 <span className="kpi-pill" style={{
                   background: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 133, 0, 0.15)',
                   color: isFastForwarding || (currentAnimPoint.day > daysInService + 5) ? '#fbbf24' : 'var(--energy-green)',

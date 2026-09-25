@@ -56,7 +56,7 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
     return (
       <div style={{
         minHeight: '100vh',
-        background: '#090e17',
+        background: 'var(--bg-0)',
         color: 'var(--text-primary)',
         display: 'flex',
         flexDirection: 'column',
@@ -272,12 +272,12 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
             {/* Total Solar */}
-            <div className="panel-card" style={{ padding: '16px 18px', background: 'rgba(234, 88, 12, 0.06)', border: '1px solid rgba(234, 88, 12, 0.25)' }}>
+            <div className="panel-card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>
                 <span>Clean Solar Harvested</span>
-                <Sun size={15} color="var(--energy-green)" />
+                <Sun size={15} color="#ea580c" />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--energy-green)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
                 {totals.total_solar_harvested_kwh.toLocaleString()} <span style={{ fontSize: '13px', fontWeight: 600 }}>kWh</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -286,12 +286,12 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
             </div>
 
             {/* Grid Power Avoided */}
-            <div className="panel-card" style={{ padding: '16px 18px', background: 'rgba(234, 88, 12, 0.06)', border: '1px solid rgba(234, 88, 12, 0.25)' }}>
+            <div className="panel-card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>
                 <span>Grid Power Avoided</span>
-                <Zap size={15} color="var(--energy-green)" />
+                <Zap size={15} color="#ea580c" />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--energy-green)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
                 {totals.total_grid_power_avoided_kwh.toLocaleString()} <span style={{ fontSize: '13px', fontWeight: 600 }}>kWh</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -300,12 +300,12 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
             </div>
 
             {/* CO2 Avoided */}
-            <div className="panel-card" style={{ padding: '16px 18px', background: 'rgba(234, 88, 12, 0.06)', border: '1px solid rgba(234, 88, 12, 0.25)' }}>
+            <div className="panel-card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>
                 <span>CO₂ Emissions Abated</span>
-                <Leaf size={15} color="var(--energy-green)" />
+                <Leaf size={15} color="#ea580c" />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--energy-green)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
                 {totals.total_co2_avoided_kg.toLocaleString()} <span style={{ fontSize: '13px', fontWeight: 600 }}>kg</span>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -314,29 +314,29 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
             </div>
 
             {/* Financial Savings */}
-            <div className="panel-card" style={{ padding: '16px 18px', background: 'rgba(245, 158, 11, 0.06)', border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+            <div className="panel-card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>
                 <span>Net TPCODL ₹ Savings</span>
-                <IndianRupee size={15} color="var(--battery-cyan)" />
+                <IndianRupee size={15} color="#ea580c" />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--battery-cyan)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
                 +₹{totals.total_inr_saved.toLocaleString()}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--energy-green)', fontWeight: 700 }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 ₹{totals.monthly_savings_lakhs} Lakhs / month saved
               </div>
             </div>
 
             {/* Fairness Index */}
-            <div className="panel-card" style={{ padding: '16px 18px', background: 'rgba(234, 88, 12, 0.06)', border: '1px solid rgba(234, 88, 12, 0.25)' }}>
+            <div className="panel-card" style={{ padding: '16px 18px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 600 }}>
                 <span>30-Day Avg Fairness</span>
-                <Activity size={15} color="var(--energy-green)" />
+                <Activity size={15} color="#ea580c" />
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--energy-green)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', margin: '6px 0 2px' }}>
                 {totals.average_fairness_index}
               </div>
-              <div style={{ fontSize: '11px', color: 'var(--energy-green)', fontWeight: 700 }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                 +{totals.fairness_improvement_pct}% vs {totals.average_baseline_fairness_index} Baseline
               </div>
             </div>
@@ -561,7 +561,7 @@ export default function HistoryView({ hideMultiyearToggle = false, minimal = fal
         {/* SECTION 4: Selected Day 24-Hour Profile Deep-Dive */}
         {selectedDay && (
           <section className="panel-card" style={{ padding: '22px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: 16, marginBottom: 18 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderBottom: '1px solid var(--line)', paddingBottom: 16, marginBottom: 18 }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
