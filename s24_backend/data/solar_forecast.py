@@ -23,11 +23,21 @@ have network access, no other code changes needed.
 import math
 import random
 
-import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
+try:
+    import numpy as np
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import mean_absolute_error
+    _HAS_SKLEARN = True
+except ImportError:  # lightweight Render slug: server.py never imports this module
+    np = None  # type: ignore
+    LinearRegression = None  # type: ignore
+    mean_absolute_error = None  # type: ignore
+    _HAS_SKLEARN = False
 
-from data.nasa_power import _synthetic_clear_sky_curve
+try:
+    from data.nasa_power import _synthetic_clear_sky_curve
+except ImportError:
+    from nasa_power import _synthetic_clear_sky_curve  # type: ignore
 
 
 WEATHER_SCALE = {
@@ -81,6 +91,8 @@ def _build_features(history: list[list[float]]) -> tuple[np.ndarray, np.ndarray]
 
 def train_forecast_model(history: list[list[float]]) -> tuple[LinearRegression, float]:
     """Trains the regression and returns (model, mean_absolute_error on a held-out last day)."""
+    if not _HAS_SKLEARN:
+        raise ImportError("scikit-learn not installed — install it to use solar_forecast training (server runtime does not need it)")
     if len(history) < 4:
         raise ValueError("Need at least 4 days of history to train + validate the forecast model")
 

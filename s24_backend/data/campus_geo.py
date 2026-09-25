@@ -18,9 +18,12 @@ report/dashboard that displays this data, per ODbL share-alike terms.
 """
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger("synaptwin.campus_geo")
 
 OSM_DATA_PATH = Path(__file__).parent / "campus_data" / "osm_buildings.json"
 
@@ -91,8 +94,17 @@ def _polygon_area_m2(ring: list[tuple[float, float]]) -> float:
 
 
 def load_campus_buildings(path: Path = OSM_DATA_PATH) -> list[CampusBuilding]:
-    with open(path) as f:
-        data = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        log.error("[campus_geo] OSM data not found at %s", path)
+        raise FileNotFoundError(
+            f"Campus OSM data missing at {path}. Expected data/campus_data/osm_buildings.json."
+        )
+    except json.JSONDecodeError as exc:
+        log.error("[campus_geo] OSM JSON corrupt: %s", exc)
+        raise ValueError(f"Campus OSM JSON corrupt at {path}: {exc}")
 
     buildings = []
     for el in data.get("elements", []):

@@ -11,8 +11,10 @@ Degradation model (standard Li-ion NMC assumptions, citable):
   - ~2.5% capacity fade per 100 equivalent full cycles (typical second-life rate,
     faster than first-life since cells are already partially aged)
   - small calendar aging term (fade even when idle)
-  - once SoH drops below a duty tier's threshold, max discharge power AND
-    usable capacity are derated, and the battery's role changes
+  - usable CAPACITY scales with SoH (rated_kWh * SoH%); max discharge POWER
+    is additionally derated by duty-tier factor (1.00 / 0.70 / 0.40 / 0.0).
+    (Earlier doc claimed both were tier-derated — corrected: capacity follows
+    SoH continuously, power follows tier steps.)
 
 Duty tiers:
   FULL_DUTY   (SoH >= 80%): full power available for day-to-day fairness allocation

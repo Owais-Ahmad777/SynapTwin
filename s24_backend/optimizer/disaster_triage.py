@@ -66,8 +66,43 @@ class TriageResult:
 
 
 def triage_allocate(locations: list[LocationNeed], battery_available_kw: float) -> TriageResult:
+    battery_available_kw = max(0.0, float(battery_available_kw or 0.0))
+    # Validate + sanitise inputs (previously no validation; negative/NaN
+    # deficits or invalid tiers could corrupt dispatch).
+    clean: list[LocationNeed] = []
+    for loc in locations or []:
+        try:
+            tier = int(loc.tier)
+        except Exception:
+            continue
+        if tier not in (1, 2, 3, 4):
+            continue
+        try:
+            deficit = max(0.0, float(loc.deficit_kw or 0.0))
+            feeder = max(0.0, float(loc.feeder_limit_kw or 0.0))
+            score = min(1.0, max(0.0, float(loc.need_score if loc.need_score is not None else 0.5)))
+        except Exception:
+            continue
+        if deficit <= 1e-9:
+            continue
+        loc.deficit_kw = round(deficit, 3)
+        loc.feeder_limit_kw = feeder
+        loc.need_score = score
+        loc.tier = tier
+        clean.append(loc)
+    locations = clean
     remaining = battery_available_kw
     allocation = {loc.name: 0.0 for loc in locations}
+    if not locations:
+        return TriageResult(
+            allocation_kw=allocation,
+            tier_fully_served={},
+            battery_used_kw=0.0,
+            battery_available_kw=battery_available_kw,
+            rejected_kw=0.0,
+            priority_order=[],
+            narrative="No locations in need — no triage dispatch required.",
+        )
     priority_order: list[str] = []
     tier_fully_served: dict[int, bool] = {}
     narrative_lines = []

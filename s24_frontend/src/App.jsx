@@ -1,3 +1,10 @@
+/*
+ * SynapTwin - Community Energy Flexibility & Shared-Battery Digital Twin
+ * Copyright (c) 2026 Owais Ahmad
+ * Author: Owais Ahmad (https://github.com/Owais-Ahmad777)
+ * Licensed under the MIT License.
+ */
+
 import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import CampusMap from './components/CampusMap';

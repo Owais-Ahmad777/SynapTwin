@@ -18,9 +18,27 @@ Honesty & Safety Constraints:
 """
 
 import json
+import logging
 import os
 import requests
 from dataclasses import asdict, dataclass
+
+log = logging.getLogger("synaptwin.alerts")
+
+try:
+    from config import GEMINI_API_KEY as _CFG_GEMINI_KEY, is_gemini_configured as _is_gemini_cfg
+    _HAS_CONFIG = True
+except ImportError:
+    _CFG_GEMINI_KEY = ""
+    _HAS_CONFIG = False
+    def _is_gemini_cfg():  # type: ignore
+        return False
+
+
+def _gemini_key() -> str:
+    if _HAS_CONFIG and _CFG_GEMINI_KEY:
+        return _CFG_GEMINI_KEY.strip()
+    return (os.environ.get("GEMINI_API_KEY", "") or "").strip()
 
 
 GEMINI_MODEL = "gemini-2.0-flash"
@@ -81,7 +99,9 @@ def generate_alerts(
     Main entry point for generating simulated alerts for a given simulation hour state.
     Uses Gemini API when configured, or deterministic offline template engine.
     """
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    api_key = _gemini_key()
+    if _HAS_CONFIG and api_key and not _is_gemini_cfg():
+        api_key = ""  # placeholder-looking key -> stay offline, don't waste a call
     effective_disaster_type = disaster_type if is_disaster_active else ("outage" if is_outage else "routine")
 
     if not api_key:
@@ -140,7 +160,7 @@ def generate_alerts(
             f"{GEMINI_URL}?key={api_key}",
             headers={"Content-Type": "application/json"},
             json=payload,
-            timeout=8,
+            timeout=5,
         )
         resp.raise_for_status()
         raw_json = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
@@ -182,7 +202,7 @@ def generate_alerts(
             fairness_ratio=fairness_ratio,
         )
     except Exception as exc:  # noqa: BLE001 - deliberate fallback for demo resilience
-        print(f"[alert_generator] Live Gemini alert generation failed ({exc}); using deterministic offline alerts")
+        log.warning("[alert_generator] Live Gemini alert generation failed (%s); using deterministic offline alerts", exc)
         return _offline_generate_alerts(
             hour=hour,
             is_outage=is_outage,
@@ -281,18 +301,28 @@ def _offline_generate_alerts(
                 disaster_type="cyclone_severe_storm",
             ))
 
-            # Tier 3/4 Warning: Power Shedding in Academic / Labs
-            curtailed_kw = rejected_kw if rejected_kw > 0.01 else 28.5
-            alerts.append(SimulatedAlert(
-                id=f"alert-cyclone-shed-{hour}",
-                severity="warning",
-                tier=3,
-                title="NON-ESSENTIAL POWER SHED",
-                message=(
+            # Tier 3/4 Warning: Power Shedding — use ONLY real rejected_kw
+            # (previously fell back to hallucinated 28.5 kW when nothing was shed).
+            curtailed_kw = max(0.0, float(rejected_kw or 0.0))
+            if curtailed_kw <= 0.01:
+                # Nothing actually shed — report shelter preservation without inventing kW.
+                shed_msg = (
+                    f"Grid islanded. Residential shelters preserved on battery "
+                    f"({battery_used_kw:.1f} of {battery_available_kw:.1f} kW in use); "
+                    f"no flexible load currently curtailed."
+                )
+            else:
+                shed_msg = (
                     f"Grid failure detected. Non-essential power shed in {top_deficit_building} "
                     f"({curtailed_kw:.1f} kW flexible demand curtailed) to preserve microgrid battery "
                     f"for residential shelters."
-                ),
+                )
+            alerts.append(SimulatedAlert(
+                id=f"alert-cyclone-shed-{hour}",
+                severity="warning" if curtailed_kw > 0.01 else "info",
+                tier=3,
+                title="NON-ESSENTIAL POWER SHED" if curtailed_kw > 0.01 else "SHELTER LOAD SECURED",
+                message=shed_msg,
                 affected_building=top_deficit_building,
                 timestamp=time_str,
                 hour=hour,
@@ -318,7 +348,18 @@ def _offline_generate_alerts(
                 ))
 
         elif disaster_type == "monsoon_waterlogging":
-            # Tier 1 Critical: Basement Drainage Sump Pump
+            # Tier 1: derive real sump load from blocks if available (was hardcoded 6.0 kW).
+            sump_kw = 0.0
+            try:
+                for b in (blocks or []):
+                    nm = (b.get("name") or "").lower()
+                    if "hostel 7" in nm and "sump" in nm:
+                        sump_kw = max(sump_kw, float(b.get("deficit_kw", 0) or b.get("allocated_kw", 0) or 0))
+                if sump_kw <= 0.01 and disaster_details:
+                    sump_kw = float(disaster_details.get("sump_kw", 0) or 0)
+            except Exception:
+                sump_kw = 0.0
+            sump_txt = f" ({sump_kw:.1f} kW drainage load)" if sump_kw > 0.01 else ""
             alerts.append(SimulatedAlert(
                 id=f"alert-monsoon-t1-{hour}",
                 severity="critical",
@@ -326,7 +367,7 @@ def _offline_generate_alerts(
                 title="TORRENTIAL FLOOD DRAINAGE PRIORITY",
                 message=(
                     f"Water table surge detected at {time_str}. Tier-1 Basement Sump Pumps "
-                    f"prioritized in ITER Boys Hostel 7 (6.0 kW drainage load) and Hostels 1 & 2. "
+                    f"prioritized in ITER Boys Hostel 7{sump_txt} and Hostels 1 & 2. "
                     f"Grid islanded."
                 ),
                 affected_building="ITER Boys Hostel 7",
@@ -336,17 +377,24 @@ def _offline_generate_alerts(
                 disaster_type="monsoon_waterlogging",
             ))
 
-            # Tier 3 Warning: Flexible Power Shed
-            shed_kw = rejected_kw if rejected_kw > 0.01 else 22.4
-            alerts.append(SimulatedAlert(
-                id=f"alert-monsoon-shed-{hour}",
-                severity="warning",
-                tier=3,
-                title="NON-ESSENTIAL LOAD SHED",
-                message=(
+            # Tier 3 Warning: use real rejected_kw only (was hallucinated 22.4 kW).
+            shed_kw = max(0.0, float(rejected_kw or 0.0))
+            if shed_kw <= 0.01:
+                monsoon_msg = (
+                    f"Grid islanded at {time_str}. Tier-2 corridor lighting and essential pumps "
+                    f"maintained on {battery_used_kw:.1f} kW battery dispatch; no flexible load shed."
+                )
+            else:
+                monsoon_msg = (
                     f"Grid failure detected. Non-essential power shed in {top_deficit_building} "
                     f"({shed_kw:.1f} kW deficit deferred). Tier-2 corridor lighting and essential pumps maintained."
-                ),
+                )
+            alerts.append(SimulatedAlert(
+                id=f"alert-monsoon-shed-{hour}",
+                severity="warning" if shed_kw > 0.01 else "info",
+                tier=3,
+                title="NON-ESSENTIAL LOAD SHED" if shed_kw > 0.01 else "ESSENTIAL LOADS MAINTAINED",
+                message=monsoon_msg,
                 affected_building=top_deficit_building,
                 timestamp=time_str,
                 hour=hour,
@@ -356,7 +404,8 @@ def _offline_generate_alerts(
 
         elif disaster_type == "electrical_fire":
             target = isolated_building or "C-Block (Academic)"
-            redirect_kw = isolated_power_redirect_kw if isolated_power_redirect_kw > 0 else 18.4
+            # Use real redirected kW; 0 means nothing redirected (was hallucinated 18.4).
+            redirect_kw = max(0.0, float(isolated_power_redirect_kw or 0.0))
             alerts.append(SimulatedAlert(
                 id=f"alert-fire-iso-{hour}",
                 severity="critical",
@@ -407,16 +456,24 @@ def _offline_generate_alerts(
                 disaster_type=disaster_type,
             ))
 
-            curtail_kw = rejected_kw if rejected_kw > 0.01 else 31.0
-            alerts.append(SimulatedAlert(
-                id=f"alert-transformer-shed-{hour}",
-                severity="warning",
-                tier=3,
-                title="TIER-3 POWER SHEDDING",
-                message=(
+            curtail_kw = max(0.0, float(rejected_kw or 0.0))
+            if curtail_kw <= 0.01:
+                trans_msg = (
+                    f"Islanded microgrid engaged supplying {battery_used_kw:.1f} kW of "
+                    f"{battery_available_kw:.1f} kW storage. Tier-1 Life-Safety locked at 100% priority; "
+                    f"no Tier-3 shed currently required."
+                )
+            else:
+                trans_msg = (
                     f"Grid failure detected. Non-essential power shed in {top_deficit_building} "
                     f"({curtail_kw:.1f} kW unmet). Tier-1 Life-Safety locked at 100% priority."
-                ),
+                )
+            alerts.append(SimulatedAlert(
+                id=f"alert-transformer-shed-{hour}",
+                severity="warning" if curtail_kw > 0.01 else "info",
+                tier=3,
+                title="TIER-3 POWER SHEDDING" if curtail_kw > 0.01 else "ISLANDED MICROGRID STABLE",
+                message=trans_msg,
                 affected_building=top_deficit_building,
                 timestamp=time_str,
                 hour=hour,
@@ -425,6 +482,8 @@ def _offline_generate_alerts(
             ))
 
         elif disaster_type == "heatwave_stress":
+            # Use real battery dispatch (was hardcoded 84.0 kW).
+            shave_kw = max(0.0, float(battery_used_kw or 0.0))
             alerts.append(SimulatedAlert(
                 id=f"alert-heatwave-surge-{hour}",
                 severity="warning",
@@ -432,7 +491,7 @@ def _offline_generate_alerts(
                 title="EXTREME HEATWAVE THERMAL STRESS",
                 message=(
                     f"Ambient 44°C triggering +35% AC chiller load surge. Shared battery executing "
-                    f"84.0 kW peak-shaving dispatch to protect 11kV campus distribution feeders from thermal tripping."
+                    f"{shave_kw:.1f} kW peak-shaving dispatch to protect 11kV campus distribution feeders from thermal tripping."
                 ),
                 affected_building="All Campus Blocks",
                 timestamp=time_str,

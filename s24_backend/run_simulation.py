@@ -1,3 +1,8 @@
+# SynapTwin - Community Energy Flexibility & Shared-Battery Digital Twin
+# Copyright (c) 2026 Owais Ahmad
+# Author: Owais Ahmad (https://github.com/Owais-Ahmad777)
+# Licensed under the MIT License.
+
 """
 run_simulation.py
 ------------------
@@ -228,13 +233,23 @@ def run():
         total_kwh_supplied += sum(bl["solar_kw"] for bl in record["blocks"]) + record["battery_used_kw"]
         hourly_results.append(record)
 
-    grid_avoided_kwh = round(total_kwh_supplied, 1)
+    # Consistent with server.py: demand - grid import (legacy script previously
+    # solar+battery double-count). total_kwh_supplied kept for reference.
+    try:
+        _dem = sum(sum(b["load_kw"] for b in h["blocks"]) for h in hourly_results)
+        _grd = sum(max(0.0, sum(b["load_kw"] - b["solar_kw"] for b in h["blocks"] if b["load_kw"] > b["solar_kw"]) - h["battery_used_kw"]) for h in hourly_results)
+        grid_avoided_kwh = round(max(0.0, _dem - _grd), 1)
+    except Exception:
+        grid_avoided_kwh = round(total_kwh_supplied, 1)
     co2_avoided_kg = round(grid_avoided_kwh * GRID_CO2_KG_PER_KWH, 1)
 
     store = SecureMeterStore()
     for r in hourly_results:
         store.put_record(f"hour_{r['hour']}", r)
-    sample_block_view = block_view(hourly_results[FLOOD_HAZARD_HOUR], "Hostel Block A")
+    try:
+        sample_block_view = block_view(hourly_results[FLOOD_HAZARD_HOUR], "ITER Boys Hostel 1")
+    except ValueError:
+        sample_block_view = {"error": "unknown block"}
 
     out_path = Path(__file__).parent / "hourly_results.json"
     with open(out_path, "w") as f:

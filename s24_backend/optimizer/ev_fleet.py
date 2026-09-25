@@ -1,6 +1,8 @@
 """
 ev_fleet.py
 ------------
+LEGACY 3-car fleet — superseded by optimizer/driev_fleet.py (12 scooters) for
+the live server path. Kept for run_simulation.py backward-compat only.
 Models a small campus EV charging bay as a flexible, two-way load:
 
 - Normal operation: EV charging is the LOWEST priority (Tier 4) flexible
@@ -89,6 +91,8 @@ def draw_v2g(fleet: list[EV], requested_kw: float, hours: float = 1.0) -> dict[s
     """
     Draws power from opted-in EVs during an outage, proportional to each
     EV's available dischargeable energy, never dipping below its reserve SoC.
+    Decrements SoC so repeated draws can't create infinite energy (previously
+    SoC was never updated, allowing unlimited V2G).
     """
     eligible = [ev for ev in fleet if ev.dischargeable_kwh > 0.01]
     if not eligible:
@@ -98,11 +102,18 @@ def draw_v2g(fleet: list[EV], requested_kw: float, hours: float = 1.0) -> dict[s
     if total_avail <= 1e-9:
         return {ev.id: 0.0 for ev in fleet}
 
-    scale = min(requested_kw / total_avail, 1.0)
+    scale = min(max(0.0, requested_kw) / total_avail, 1.0)
     drawn = {ev.id: 0.0 for ev in fleet}
     for ev in eligible:
         cap = min(ev.charger_power_kw, ev.dischargeable_kwh / hours)
-        drawn[ev.id] = round(cap * scale, 3)
+        give = round(cap * scale, 3)
+        drawn[ev.id] = give
+        # Persist discharge (kW * hours = kWh) with reserve floor.
+        if give > 0:
+            kwh = give * max(hours, 1e-6)
+            new_energy = max(ev.energy_kwh - kwh,
+                             ev.battery_capacity_kwh * ev.min_reserve_soc_pct / 100.0)
+            ev.soc_pct = round(new_energy / ev.battery_capacity_kwh * 100.0, 2)
     return drawn
 
 
