@@ -4,6 +4,7 @@ import CampusMap from '../components/CampusMap';
 import EnergyCharts from '../components/EnergyCharts';
 import EnergyFlowDiagram from '../components/EnergyFlowDiagram';
 import ExplainabilityPanel from '../components/ExplainabilityPanel';
+import DayAheadForecastPanel from '../components/DayAheadForecastPanel';
 import BuildingHistoryPage from './BuildingHistoryPage';
 import BuildingViewer3D from '../components/BuildingViewer3D';
 import PrivacyVault from '../components/PrivacyVault';
@@ -222,6 +223,12 @@ export default function HomePage(props) {
           />
           <PrivacyVault currentRole={currentRole} currentHour={currentHour} simData={simData} telemetryOnly />
         </div>
+      </section>
+
+      {/* SECTION 4 — Day-Ahead Load Forecast (16 trained models) */}
+      <section className="st-section" aria-label="Day-ahead load forecast">
+        <div className="st-section-eyebrow">24-Hour Forecast</div>
+        <DayAheadForecastPanel />
       </section>
     </div>
   );
