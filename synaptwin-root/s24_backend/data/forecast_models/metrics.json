@@ -1,0 +1,129 @@
+{
+  "horizon": "day-ahead hourly per building",
+  "split": "train Jan-Sep 2026, test Oct-Dec 2026 (time-based)",
+  "features": [
+    "sin_h",
+    "cos_h",
+    "weekday",
+    "month",
+    "weekend",
+    "holiday",
+    "lag1d_same_hour",
+    "lag7d_mean_same_hour",
+    "tmax_c"
+  ],
+  "buildings": {
+    "A-Block": {
+      "mae_kwh": 0.47,
+      "mape_pct": 7.44,
+      "mean_kwh": 67.24,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Auditorium": {
+      "mae_kwh": 4.65,
+      "mape_pct": 363.67,
+      "mean_kwh": 5.48,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "B-Block": {
+      "mae_kwh": 0.55,
+      "mape_pct": 11.54,
+      "mean_kwh": 46.65,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "C-Block": {
+      "mae_kwh": 0.75,
+      "mape_pct": 13.14,
+      "mean_kwh": 73.61,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Cafeteria": {
+      "mae_kwh": 0.54,
+      "mape_pct": 11.81,
+      "mean_kwh": 17.13,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "D-Block": {
+      "mae_kwh": 1.32,
+      "mape_pct": 13.03,
+      "mean_kwh": 53.41,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Data-Science": {
+      "mae_kwh": 0.96,
+      "mape_pct": 9.16,
+      "mean_kwh": 21.78,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "E-Block": {
+      "mae_kwh": 0.68,
+      "mape_pct": 13.44,
+      "mean_kwh": 60.1,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "EV-Station": {
+      "mae_kwh": 0.02,
+      "mape_pct": 1.75,
+      "mean_kwh": 0.77,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "F-Block": {
+      "mae_kwh": 1.87,
+      "mape_pct": 15.15,
+      "mean_kwh": 32.67,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "G-Block": {
+      "mae_kwh": 1.73,
+      "mape_pct": 24.36,
+      "mean_kwh": 93.15,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Hostel-1": {
+      "mae_kwh": 0.33,
+      "mape_pct": 7.71,
+      "mean_kwh": 18.09,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Hostel-2": {
+      "mae_kwh": 0.29,
+      "mape_pct": 7.79,
+      "mean_kwh": 18.11,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Hostel-7": {
+      "mae_kwh": 3.49,
+      "mape_pct": 58.23,
+      "mean_kwh": 159.11,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "Library": {
+      "mae_kwh": 1.23,
+      "mape_pct": 26.88,
+      "mean_kwh": 77.53,
+      "train_rows": 6384,
+      "test_rows": 2208
+    },
+    "S-Block": {
+      "mae_kwh": 8.03,
+      "mape_pct": 70.93,
+      "mean_kwh": 34.14,
+      "train_rows": 6384,
+      "test_rows": 2208
+    }
+  }
+}

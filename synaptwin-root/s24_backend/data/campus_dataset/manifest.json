@@ -1,0 +1,9 @@
+{
+  "days": 365,
+  "start": "2026-01-01",
+  "seed": 42,
+  "meters": 952,
+  "rows": 33358080,
+  "event_days": 70,
+  "note": "Bottom-up synthetic campus telemetry. [M]easured room counts, [A]ssumed densities."
+}
