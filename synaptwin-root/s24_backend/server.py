@@ -2120,18 +2120,28 @@ def get_day_ahead_forecast():
     if not models_dir.exists():
         return jsonify({"error": "Forecast models not found. Run data/train_load_forecast.py first."}), 404
 
-    # Load per-building models
+    # Load per-building models (optional - forecast works without them)
     models = {}
-    for model_file in models_dir.glob("model_*.joblib"):
-        building_name = model_file.stem.replace("model_", "")
-        models[building_name] = joblib.load(models_dir / model_file)
+    try:
+        for model_file in models_dir.glob("model_*.joblib"):
+            building_name = model_file.stem.replace("model_", "")
+            try:
+                models[building_name] = joblib.load(models_dir / model_file)
+            except Exception as model_exc:
+                log.warning(f"Failed to load model {model_file.name}: {model_exc}")
+                continue
+    except Exception as exc:
+        log.warning(f"Model loading failed, using simplified forecast: {exc}")
+        models = {}
 
     # Load campus blocks for solar capacity
     blocks = {b.name: b for b in campus_blocks}
 
     # Generate 24-hour forecast for each building
+    # Use models if loaded, otherwise fall back to all campus blocks
     forecast = {}
-    for building_name, model in models.items():
+    buildings_to_forecast = list(models.keys()) if models else list(blocks.keys())
+    for building_name in buildings_to_forecast:
         if building_name not in blocks:
             continue
         block = blocks[building_name]
