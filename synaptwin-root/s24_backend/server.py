@@ -2246,13 +2246,27 @@ def get_day_ahead_forecast():
         solar_kwp = block.solar_kwp
         model_obj = models.get(building_name)
 
+        def historical_mean(building, h):
+            """7-day same-hour mean from hourly_building.csv (no ML needed)."""
+            bdata = series.get(building, {})
+            vals = []
+            for k in range(1, 8):
+                dd = (target_dt - __import__("datetime").timedelta(days=k)).strftime("%Y-%m-%d")
+                v = bdata.get((dd, h))
+                if v is not None:
+                    vals.append(v)
+            if vals:
+                return sum(vals) / len(vals)
+            all_vals = list(bdata.values()) if bdata else [0.0]
+            return sum(all_vals) / max(len(all_vals), 1)
+
         hourly = []
         for h in range(24):
             solar_kw = round(max(0.0, solar_kwp * next_day_irradiance[h] / 1000.0 * 0.8), 2)
             if model_obj is not None:
                 forecast_kw = round(predict_building(building_name, model_obj, h), 2)
             else:
-                forecast_kw = 0.0
+                forecast_kw = round(max(0.0, historical_mean(building_name, h)), 2)
             hourly.append({"hour": h, "solar_kw": solar_kw, "forecast_kw": forecast_kw})
 
         forecast[building_name] = {
@@ -2266,7 +2280,7 @@ def get_day_ahead_forecast():
         "date": target_date_str,
         "forecast": forecast,
         "models_used": model_count,
-        "note": f"Live inference from {model_count} trained models" if model_count else "No models loaded - solar only",
+        "note": f"Live inference from {model_count} trained models" if model_count else "Historical 7-day mean forecast (models unavailable - sklearn version)",
     })
 
 # ---- Campus meter dataset (see data/generate_campus_dataset.py) ----
