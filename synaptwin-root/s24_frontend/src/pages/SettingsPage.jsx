@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield } from 'lucide-react';
 import PrivacyVault from '../components/PrivacyVault';
+import SystemStatusPanel from '../components/SystemStatusPanel';
 
 // UI-ONLY settings shell. Profile management lives in the header Profile
 // dropdown; this page keeps Security & Access Control. No backend impact.
@@ -14,6 +15,7 @@ export default function SettingsPage({ currentRole, currentHour, simData }) {
       </div>
 
       <div className="st-stack">
+        <SystemStatusPanel />
         <div className="panel-card" style={{ borderColor: 'rgba(56,189,248,0.35)' }}>
           <div className="panel-header"><div className="panel-title"><Shield size={16} color="#38bdf8" /><span>Security &amp; Access Control (Advanced)</span></div></div>
           <div className="panel-body">
