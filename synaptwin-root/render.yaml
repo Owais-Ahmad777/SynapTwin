@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: singapore
-    buildCommand: "cd s24_frontend && npm install && npm run build && cd ../s24_backend && pip install --prefer-binary -r requirements.txt"
+    buildCommand: "cd s24_frontend && npm install && npm run build && cd ../s24_backend && pip install --prefer-binary -r requirements.txt && python data/generate_campus_dataset.py --days 365 && python data/train_load_forecast.py"
     startCommand: "cd s24_backend && gunicorn server:app --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120 --graceful-timeout 30 --max-requests 200 --max-requests-jitter 20 --keep-alive 5 --access-logfile -"
     healthCheckPath: /api/health
     envVars:
