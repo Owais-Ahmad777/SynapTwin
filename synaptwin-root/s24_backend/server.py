@@ -2168,9 +2168,25 @@ def get_day_ahead_forecast():
     HOLIDAYS = {(1, 26), (3, 14), (6, 27), (8, 15), (10, 20), (10, 21), (12, 25)}
     EVENT_THRESH = {"Auditorium": 100, "S-Block": 100, "G-Block": 100, "Library": 100,
                     "Hostel-7": 200, "E-Block": 120}
+    # Map block full names (real_campus_blocks) -> CSV/model short names
+    NAME_MAP = {
+        "Bansuri Guru Auditorium": "Auditorium",
+        "C-Block (Academic)": "C-Block",
+        "Campus Utility Substation": "EV-Station",
+        "Central Library": "Library",
+        "Centre for Data Science": "Data-Science",
+        "ITER Administrative Block": "B-Block",
+        "ITER Boys Hostel 1": "Hostel-1",
+        "ITER Boys Hostel 2": "Hostel-2",
+        "ITER Boys Hostel 7": "Hostel-7",
+        "ITER Cafeteria & Dining": "Cafeteria",
+        "Research & Innovation Wing": "Data-Science",
+        "S-Block (Sports Complex)": "S-Block",
+    }
 
     def build_features(building, h):
         """21-feature vector matching train_load_forecast.rows_for()."""
+        csv_name = NAME_MAP.get(building, building)
         wd = target_dt.weekday()
         doy = target_dt.timetuple().tm_yday
         month = target_dt.month
@@ -2178,7 +2194,7 @@ def get_day_ahead_forecast():
         is_weekend = 1.0 if wd >= 5 else 0.0
         holiday = 1.0 if (month, day) in HOLIDAYS else 0.0
         exam_week = 1.0 if month in {4, 5, 11, 12} else 0.0
-        bdata = series.get(building, {})
+        bdata = series.get(csv_name, {}) or series.get(building, {})
         d1 = (target_dt - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
         lag1 = bdata.get((d1, h))
         lag7_vals = []
@@ -2248,7 +2264,8 @@ def get_day_ahead_forecast():
 
         def historical_mean(building, h):
             """7-day same-hour mean from hourly_building.csv (no ML needed)."""
-            bdata = series.get(building, {})
+            csv_name = NAME_MAP.get(building, building)
+            bdata = series.get(csv_name, {}) or series.get(building, {})
             vals = []
             for k in range(1, 8):
                 dd = (target_dt - __import__("datetime").timedelta(days=k)).strftime("%Y-%m-%d")
