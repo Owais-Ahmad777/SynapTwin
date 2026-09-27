@@ -2137,8 +2137,106 @@ def get_day_ahead_forecast():
     # Load campus blocks for solar capacity
     blocks = {b.name: b for b in campus_blocks}
 
-    # Generate 24-hour forecast for each building
-    # Use models if loaded, otherwise fall back to all campus blocks
+    # Load historical series for lag features (same source as training)
+    import csv
+    import math
+    from datetime import datetime as dt_mod
+    hist_path = Path(__file__).parent / "data" / "campus_dataset" / "hourly_building.csv"
+    weather_path = Path(__file__).parent / "data" / "campus_dataset" / "weather.csv"
+    series = {}
+    weather_map = {}
+    try:
+        with open(hist_path, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                series.setdefault(r["building"], {})[(r["date"], int(r["hour"]))] = float(r["kwh"])
+        with open(weather_path, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                weather_map[r["date"]] = (float(r["tmax_c"]), r.get("rain") == "1")
+    except OSError as exc:
+        log.warning(f"Historical data unavailable for forecast lags: {exc}")
+
+    # Parse target date for calendar features
+    try:
+        target_dt = dt_mod.strptime(target_date_str or target_date, "%Y-%m-%d")
+    except Exception:
+        from datetime import date as date_cls, timedelta as td_cls
+        target_dt = dt_mod.combine(date_cls.today() + td_cls(days=1), dt_mod.min.time())
+        target_date_str = target_dt.strftime("%Y-%m-%d")
+    target_date_s = target_dt.strftime("%Y-%m-%d")
+    tmax_target, _ = weather_map.get(target_date_s, (32.0, False))
+
+    HOLIDAYS = {(1, 26), (3, 14), (6, 27), (8, 15), (10, 20), (10, 21), (12, 25)}
+    EVENT_THRESH = {"Auditorium": 100, "S-Block": 100, "G-Block": 100, "Library": 100,
+                    "Hostel-7": 200, "E-Block": 120}
+
+    def build_features(building, h):
+        """21-feature vector matching train_load_forecast.rows_for()."""
+        wd = target_dt.weekday()
+        doy = target_dt.timetuple().tm_yday
+        month = target_dt.month
+        day = target_dt.day
+        is_weekend = 1.0 if wd >= 5 else 0.0
+        holiday = 1.0 if (month, day) in HOLIDAYS else 0.0
+        exam_week = 1.0 if month in {4, 5, 11, 12} else 0.0
+        bdata = series.get(building, {})
+        d1 = (target_dt - __import__("datetime").timedelta(days=1)).strftime("%Y-%m-%d")
+        lag1 = bdata.get((d1, h))
+        lag7_vals = []
+        for k in range(1, 8):
+            dd = (target_dt - __import__("datetime").timedelta(days=k)).strftime("%Y-%m-%d")
+            v = bdata.get((dd, h))
+            lag7_vals.append(v)
+        # Fall back to building mean if history missing (e.g. future dates)
+        if lag1 is None or any(v is None for v in lag7_vals):
+            all_vals = [v for v in bdata.values()] if bdata else [0.0]
+            fallback = sum(all_vals) / max(len(all_vals), 1)
+            lag1 = fallback if lag1 is None else lag1
+            lag7_vals = [fallback if v is None else v for v in lag7_vals]
+        d7_ago = (target_dt - __import__("datetime").timedelta(days=7)).strftime("%Y-%m-%d")
+        lag_same_wd = bdata.get((d7_ago, h), lag1)
+        mean7 = sum(lag7_vals) / 7.0
+        var7 = sum((v - mean7) ** 2 for v in lag7_vals) / 7.0
+        return [
+            math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24),
+            math.sin(2 * math.pi * doy / 365), math.cos(2 * math.pi * doy / 365),
+            float(wd), float(month), is_weekend, holiday,
+            float(lag1), float(lag_same_wd), float(mean7), math.sqrt(max(var7, 0.0)), float(tmax_target),
+            0.0,  # is_event (unknown at forecast time -> assume non-event)
+            exam_week, holiday, is_weekend,
+            math.sin(2 * math.pi * month / 12), math.cos(2 * math.pi * month / 12),
+            math.sin(2 * math.pi * day / 31), math.cos(2 * math.pi * day / 31),
+        ]
+
+    def predict_building(building, model_obj, h):
+        """Run model inference, handling both single regressors and event-driven dicts."""
+        x = build_features(building, h)
+        try:
+            if isinstance(model_obj, dict):
+                clf = model_obj.get("clf")
+                model_ne = model_obj.get("model_ne")
+                model_ev = model_obj.get("model_ev")
+                if clf is not None:
+                    try:
+                        prob = float(clf.predict_proba([x])[0][1])
+                    except Exception:
+                        prob = 0.0
+                else:
+                    prob = 0.0
+                thresh = EVENT_THRESH.get(building, 100)
+                if prob > 0.5 and model_ev is not None:
+                    return max(0.0, float(model_ev.predict([x])[0]))
+                elif model_ne is not None:
+                    return max(0.0, float(model_ne.predict([x])[0]))
+                else:
+                    # Fallback: lag-based naive forecast
+                    return max(0.0, x[8])
+            else:
+                return max(0.0, float(model_obj.predict([x])[0]))
+        except Exception as exc:
+            log.warning(f"Predict failed for {building} h={h}: {exc}")
+            return max(0.0, x[8])  # lag1 fallback
+
+    # Generate 24-hour forecast for each building using real model inference
     forecast = {}
     buildings_to_forecast = list(models.keys()) if models else list(blocks.keys())
     for building_name in buildings_to_forecast:
@@ -2146,36 +2244,29 @@ def get_day_ahead_forecast():
             continue
         block = blocks[building_name]
         solar_kwp = block.solar_kwp
+        model_obj = models.get(building_name)
 
-        # Get forecast for 24 hours
-        building_forecast = []
+        hourly = []
         for h in range(24):
-            # Feature engineering matching training
-            hour = (datetime.now().hour + h) % 24  # Simplified: use next 24 hours
-            # Simplified feature vector - in production use full feature engineering
-            # For now, use solar irradiance and hour features
-            pass
+            solar_kw = round(max(0.0, solar_kwp * next_day_irradiance[h] / 1000.0 * 0.8), 2)
+            if model_obj is not None:
+                forecast_kw = round(predict_building(building_name, model_obj, h), 2)
+            else:
+                forecast_kw = 0.0
+            hourly.append({"hour": h, "solar_kw": solar_kw, "forecast_kw": forecast_kw})
 
-        # Simplified forecast using solar irradiance and model
-        # In production, use full feature engineering matching training
-        building_forecast = {
+        forecast[building_name] = {
             "building": building_name,
             "solar_kwp": solar_kwp,
-            "hourly": [
-                {
-                    "hour": h,
-                    "solar_kw": round(max(0.0, solar_kwp * next_day_irradiance[h] / 1000.0 * 0.8), 2),
-                    "forecast_kw": 0.0  # Model prediction would go here
-                }
-                for h in range(24)
-            ]
+            "hourly": hourly,
         }
-        forecast[building_name] = building_forecast
 
+    model_count = len(models)
     return jsonify({
         "date": target_date_str,
         "forecast": forecast,
-        "note": "Simplified forecast - full model inference pending"
+        "models_used": model_count,
+        "note": f"Live inference from {model_count} trained models" if model_count else "No models loaded - solar only",
     })
 
 # ---- Campus meter dataset (see data/generate_campus_dataset.py) ----
