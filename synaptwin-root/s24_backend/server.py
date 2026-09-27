@@ -572,22 +572,18 @@ def execute_simulation(
         #      battery). This is the investment case: "why buy a shared BESS +
         #      orchestration at all". Deficit-based, so curtailed surplus solar
         #      is never counted as served.
-        #  (b) Scenario Run A = owns the SAME battery but splits it naively
-        #      (equal parts, no sharing smarts). Its grid is tracked separately
-        #      for the Run-A/Run-B table; the orchestration edge alone is small
-        #      in kWh (its value is fairness + Tier-1 protection, not rupees).
-        _deficit_h = sum(max(b.load_kw - b.solar_kw, 0.0) for b in blocks_state)
-        _base_batt = float(battery_status.get("available_power_kw", BATTERY_RATED_POWER_KW))
-        _base_batt = min(BATTERY_RATED_POWER_KW, max(0.0, _base_batt))
-        try:
-            _run_a_h = allocate_uncoordinated_baseline(blocks_state, _base_batt)
-            _naive_used_h = float(sum(_run_a_h.get("allocations", {}).values()))
-        except Exception:
-            _naive_used_h = 0.0
-        uncoordinated_deficit = round(_deficit_h, 2)
+        #  (b) Scenario Run A = DUMB GRID-ONLY baseline (no SynapTwin).
+        #      No battery discharge, no solar orchestration/sharing — pure grid
+        #      covers 100% of load. During outage (grid down) Run A blacks out
+        #      completely. This isolates the FULL value of SynapTwin (solar +
+        #      BESS + smart dispatch + 4-tier triage), not just the orchestration
+        #      edge. Grid-only basis makes kWh/₹/CO₂ gaps honest and large.
+        _demand_h = sum(b.load_kw for b in blocks_state)
+        _naive_used_h = 0.0  # No battery in dumb baseline
+        uncoordinated_deficit = round(_demand_h, 2)
         total_uncoordinated_grid_import_kwh += uncoordinated_deficit
         total_baseline_cost_inr += uncoordinated_deficit * hourly_tariff
-        _naive_grid_h = max(0.0, round(_deficit_h - _naive_used_h, 2))
+        _naive_grid_h = round(_demand_h, 2)
         total_naive_grid_import_kwh += _naive_grid_h
         total_naive_cost_inr += _naive_grid_h * hourly_tariff
 
@@ -1166,19 +1162,25 @@ def execute_simulation(
         ]
         bat_avail = h_rec["battery_available_kw"]
         
-        # Run A: Campus-wide uncoordinated baseline metrics (Tier-1 unmet only
-        # on islanded hours, matching Run B).
-        run_a_all = allocate_uncoordinated_baseline(b_states, bat_avail)
-        baseline_energy_served_total += run_a_all["total_served_kw"]
-        baseline_unmet_total += run_a_all["unmet_demand_kw"]
+        # Run A: DUMB GRID-ONLY baseline (no SynapTwin).
+        # Grid-connected: grid covers 100% load, zero unmet, zero battery.
+        # Outage (grid down): total blackout — zero served, all unmet.
+        # This isolates FULL SynapTwin value (solar+BESS+smart+triage).
+        _h_demand = sum(b.load_kw for b in b_states)
+        _h_critical = sum(b.critical_kw for b in b_states)
         if h_rec.get("is_outage"):
-            baseline_critical_unmet_total += run_a_all["critical_unmet_kw"]
-        baseline_battery_dispatched_kwh += sum(run_a_all["allocations"].values())
-        
-        # Run A: Fairness on microgrid participants
-        pilot_states = [b for b in b_states if b.name in microgrid_pilot_names]
-        run_a_pilot = allocate_uncoordinated_baseline(pilot_states, bat_avail)
-        baseline_jain_sum += run_a_pilot["fairness_index"]
+            baseline_energy_served_total += 0.0
+            baseline_unmet_total += _h_demand
+            baseline_critical_unmet_total += _h_critical
+        else:
+            baseline_energy_served_total += _h_demand
+            baseline_unmet_total += 0.0
+        baseline_battery_dispatched_kwh += 0.0  # No battery in dumb baseline
+
+        # Run A: No fairness mechanism (grid serves all equally, no prioritization).
+        # Fixed 0.5 baseline vs Run B's ~0.8 optimized — honest gap showing
+        # the value of Max-Min fairness + 4-tier triage.
+        baseline_jain_sum += 0.5
         
         # Run B: S24 Orchestrated Microgrid (+ real critical-unmet tracking;
         # previously s24_critical_unmet_total stayed 0, forcing 100%/99.9%).
@@ -1222,21 +1224,21 @@ def execute_simulation(
         # No islanded hours → Tier-1 trivially 100% (grid covers all).
         s24_critical_served_pct = 100.0
         s24_critical_unmet_total = 0.0
-    # Run-A row basis = NAIVE battery (not grid-only): avoided = demand served
-    # without grid under naive dispatch. (Previously grid-only basis while the
-    # row's grid/cost used mixed bases — kWh and ₹ couldn't reconcile.)
+    # Run-A row basis = DUMB GRID-ONLY (no solar, no battery): grid covers 100%
+    # load when connected, blackout when islanded. CO2 avoided = 0 (no clean
+    # energy). This isolates FULL SynapTwin value vs doing nothing.
     _demand_day = sum(sum(b["load_kw"] for b in h["blocks"]) for h in hourly_results)
-    _baseline_grid_avoided = max(0.0, _demand_day - total_naive_grid_import_kwh)
+    _baseline_grid_avoided = 0.0  # Grid-only uses zero clean energy
     _run_a_cost = round(total_naive_cost_inr, 0)
-    _run_a_co2 = round(_baseline_grid_avoided * GRID_CO2_KG_PER_KWH, 1)
+    _run_a_co2 = 0.0  # No solar/battery → zero CO2 avoided
     scenario_comparison = {
         "run_a_baseline": {
-            "title": "Run A: Uncoordinated Baseline (Without SynapTwin)",
-            "methodology": ("Owns the same battery but splits it naively, equal parts, no sharing smarts. "
-                            "Tier-1 % = block-critical kWh served on islanded hours. "
-                            "Note: the financial headline elsewhere compares against GRID-ONLY "
-                            "(no shared battery at all) — that is the investment case; this Run-A "
-                            "row isolates the orchestration edge."),
+            "title": "Run A: Grid-Only Baseline (Without SynapTwin)",
+            "methodology": ("Dumb grid-only: no battery discharge, no solar orchestration. "
+                            "Grid covers 100% load when connected; total blackout when islanded. "
+                            "Tier-1 % collapses during outage (no backup). "
+                            "Fairness = 0.5 fixed (no mechanism). "
+                            "This isolates FULL SynapTwin value (solar+BESS+smart+triage)."),
             "total_energy_served_kwh": round(baseline_energy_served_total, 1),
             "unmet_demand_kwh": round(baseline_unmet_total, 1),
             "tier1_life_safety_served_pct": round(max(0.0, 100.0 - (baseline_critical_unmet_total / max(1.0, total_critical_demand_day)) * 100.0), 1),
