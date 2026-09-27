@@ -1,0 +1,2 @@
+synaptwin-root/s24_backend/data/campus_dataset/readings/*.csv filter=lfs diff=lfs merge=lfs -text
+synaptwin-root/s24_backend/data/forecast_models/*.joblib filter=lfs diff=lfs merge=lfs -text
