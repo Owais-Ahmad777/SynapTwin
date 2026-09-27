@@ -1181,6 +1181,9 @@ def execute_simulation(
         # Fixed 0.5 baseline vs Run B's ~0.8 optimized — honest gap showing
         # the value of Max-Min fairness + 4-tier triage.
         baseline_jain_sum += 0.5
+
+        # Pilot states for Run B fairness (defined here, used below)
+        pilot_states = [b for b in b_states if b.name in microgrid_pilot_names]
         
         # Run B: S24 Orchestrated Microgrid (+ real critical-unmet tracking;
         # previously s24_critical_unmet_total stayed 0, forcing 100%/99.9%).
