@@ -154,7 +154,7 @@ export default function HomePage(props) {
       {/* PlayDay lives in the floating button (App shell) on home/driveev/disaster */}
       {/* HERO: map is the centerpiece */}
       <section className="st-hero st-hero-admin" aria-label="Campus digital twin map">
-        <div className="st-map-wrap map-hero map-hero-admin has-bottom-cards">
+        <div className="st-map-wrap map-hero map-hero-admin">
           <CampusMap
             geoData={geoData}
             hourData={hourData}
@@ -163,7 +163,7 @@ export default function HomePage(props) {
             onSelectBuilding={(b) => console.log('Selected building:', b?.name || b)}
           />
           {/* Floating quick-insight cards integrated around map edges */}
-          <div className="st-float-grid st-float-grid-bottom">
+          <div className="st-float-grid">
             {cards.map((c) => {
               const Icon = c.icon;
               return (
