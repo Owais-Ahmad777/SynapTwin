@@ -2303,6 +2303,22 @@ def get_day_ahead_forecast():
             log.warning(f"Predict failed for {building} h={h}: {exc}")
             return max(0.0, x[8])  # lag1 fallback
 
+    # Load per-building MAPE from metrics.json BEFORE loop (honest accuracy)
+    metrics_map = {}
+    try:
+        import json as json_mod
+        metrics_path = Path(__file__).parent / "data" / "forecast_models" / "metrics.json"
+        if metrics_path.exists():
+            with open(metrics_path, encoding="utf-8") as mf:
+                metrics_data = json_mod.load(mf)
+                for bname, m in (metrics_data.get("buildings") or {}).items():
+                    metrics_map[bname] = {
+                        "mape_pct": m.get("mape_pct"),
+                        "mae_kwh": m.get("mae_kwh"),
+                    }
+    except Exception as exc:
+        log.warning(f"Could not load forecast metrics: {exc}")
+
     # Generate 24-hour forecast for each building using real model inference
     forecast = {}
     buildings_to_forecast = list(models.keys()) if models else list(blocks.keys())
@@ -2330,16 +2346,26 @@ def get_day_ahead_forecast():
 
         hourly = []
         for h in range(24):
-            solar_kw = round(max(0.0, solar_kwp * next_day_irradiance[h] / 1000.0 * 0.8), 2)
-            if model_obj is not None:
-                forecast_kw = round(predict_building(building_name, model_obj, h), 2)
-            else:
-                forecast_kw = round(max(0.0, historical_mean(building_name, h)), 2)
+            try:
+                solar_kw = round(max(0.0, solar_kwp * next_day_irradiance[h] / 1000.0 * 0.8), 2)
+            except Exception:
+                solar_kw = 0.0
+            try:
+                if model_obj is not None:
+                    forecast_kw = round(predict_building(building_name, model_obj, h), 2)
+                else:
+                    forecast_kw = round(max(0.0, historical_mean(building_name, h)), 2)
+            except Exception:
+                forecast_kw = 0.0
             hourly.append({"hour": h, "solar_kw": solar_kw, "forecast_kw": forecast_kw})
 
         # Attach real MAPE/MAE via NAME_MAP (CSV short -> metrics)
-        csv_key = NAME_MAP.get(building_name, building_name)
-        b_metrics = metrics_map.get(csv_key) or metrics_map.get(building_name) or {}
+        # metrics_map defined before loop; safe .get with fallback
+        try:
+            csv_key = NAME_MAP.get(building_name, building_name)
+            b_metrics = (metrics_map or {}).get(csv_key) or (metrics_map or {}).get(building_name) or {}
+        except Exception:
+            b_metrics = {}
         forecast[building_name] = {
             "building": building_name,
             "solar_kwp": solar_kwp,
@@ -2349,21 +2375,6 @@ def get_day_ahead_forecast():
         }
 
     model_count = len(models)
-    # Load per-building MAPE from metrics.json (honest accuracy, not hardcoded)
-    metrics_map = {}
-    try:
-        import json as json_mod
-        metrics_path = Path(__file__).parent / "data" / "forecast_models" / "metrics.json"
-        if metrics_path.exists():
-            with open(metrics_path, encoding="utf-8") as mf:
-                metrics_data = json_mod.load(mf)
-                for bname, m in (metrics_data.get("buildings") or {}).items():
-                    metrics_map[bname] = {
-                        "mape_pct": m.get("mape_pct"),
-                        "mae_kwh": m.get("mae_kwh"),
-                    }
-    except Exception as exc:
-        log.warning(f"Could not load forecast metrics: {exc}")
     return jsonify({
         "date": target_date_str,
         "forecast": forecast,
