@@ -816,12 +816,12 @@ export default function EnergyCharts({
                   {isFastForwarding ? (
                     <>
                       <RotateCcw size={12} className="spin-animation" />
-                      <span>Simulating 5-Yr Life...</span>
+                      <span className="ff-demo-label">Simulating 5-Yr Life...</span>
                     </>
                   ) : (
                     <>
                       <Play size={12} fill="currentColor" />
-                      <span>Fast-Forward Demo (5-Yr)</span>
+                      <span className="ff-demo-label">Fast-Forward Demo (5-Yr)</span>
                     </>
                   )}
                 </button>
