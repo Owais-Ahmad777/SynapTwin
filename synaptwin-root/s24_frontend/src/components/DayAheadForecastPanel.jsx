@@ -12,23 +12,32 @@ export default function DayAheadForecastPanel() {
   const [selectedBuilding, setSelectedBuilding] = useState(null);
 
   useEffect(() => {
-    fetch('/api/forecast/day-ahead')
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+    fetch('/api/forecast/day-ahead', { signal: ctrl.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((json) => {
+        clearTimeout(timer);
         setData(json);
         const buildings = Object.keys(json.forecast || {});
-        if (buildings.length > 0 && !selectedBuilding) {
-          setSelectedBuilding(buildings[0]);
+        if (buildings.length > 0) {
+          setSelectedBuilding((prev) => prev && json.forecast[prev] ? prev : buildings[0]);
         }
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message);
+        clearTimeout(timer);
+        if (err.name !== 'AbortError') setError(err.message);
+        else setError('Request timed out (45s) — backend cold start or slow.');
         setLoading(false);
       });
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
   }, []);
 
   if (loading) {

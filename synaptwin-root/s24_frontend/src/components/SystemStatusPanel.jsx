@@ -10,19 +10,28 @@ export default function SystemStatusPanel() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch('/api/status')
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    fetch('/api/status', { signal: ctrl.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((json) => {
+        clearTimeout(timer);
         setData(json);
         setLoading(false);
       })
       .catch((err) => {
-        setError(err.message);
+        clearTimeout(timer);
+        if (err.name !== 'AbortError') setError(err.message);
+        else setError('Request timed out — backend cold start.');
         setLoading(false);
       });
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
   }, []);
 
   if (loading) {
