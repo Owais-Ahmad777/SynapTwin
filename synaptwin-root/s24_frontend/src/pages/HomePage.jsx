@@ -160,7 +160,7 @@ export default function HomePage(props) {
             hourData={hourData}
             currentHour={currentHour}
             currentRole={currentRole}
-            onSelectBlock={(b) => console.log('Selected block:', b)}
+            onSelectBuilding={(b) => console.log('Selected building:', b?.name || b)}
           />
           {/* Floating quick-insight cards integrated around map edges */}
           <div className="st-float-grid">

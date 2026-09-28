@@ -15,6 +15,7 @@ const TARGET_15_BUILDINGS = [
   { id: 'A-Block', label: 'A-Block', match: 'a-block' },
   { id: 'C-Block (Academic)', label: 'C-Block', match: 'c-block' },
   { id: 'D-Block', label: 'D-Block', match: 'd-block' },
+  { id: 'E-Block', label: 'E-Block', match: 'e-block' },
   { id: 'F-Block', label: 'F-Block', match: 'f-block' },
   { id: 'G-Block', label: 'G-Block', match: 'g-block' },
   { id: 'S-Block (Sports Complex)', label: 'S-Block', match: 's-block' },

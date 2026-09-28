@@ -58,6 +58,7 @@ const ROLE_BUILDING_MAP = {
   a_block: 'A-Block',
   hostel_2: 'ITER Boys Hostel 2',
   sports: 'S-Block (Sports Complex)',
+  e_block: 'E-Block',
   f_block: 'F-Block',
   g_block: 'G-Block',
   data_science: 'Centre for Data Science',
@@ -161,6 +162,7 @@ export default function App() {
     disaster_end_hour: 22,
     cyclone_start_hour: 12,
     cyclone_end_hour: 22,
+    dataset_date: null,
   };
 
   const [simParams, setSimParams] = useState(DEFAULT_SIM_PARAMS);

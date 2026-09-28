@@ -324,6 +324,7 @@ def execute_simulation(
     disaster_start_hour: int | None = None,
     disaster_end_hour: int | None = None,
     enable_live_llm: bool | None = None,
+    dataset_date: str | None = None,
 ) -> dict:
     """
     Executes a 24-hour simulation with full energy mix, Open-Meteo weather data,
@@ -435,6 +436,44 @@ def execute_simulation(
     campus_blocks = real_campus_blocks()
     base_load_curves = generate_all(campus_blocks, day_name=day_name, day_type=day_type)
     feeder_limits = {b.name: round(max(b.peak_kw * 1.3, 30), 1) for b in campus_blocks}
+
+    # 2b. Dataset override: if dataset_date provided, replace synthetic curves
+    # with actual metered loads from hourly_building.csv (data-driven twin).
+    dataset_loads_used = False
+    if dataset_date:
+        try:
+            import csv as csv_mod
+            _hist_path = Path(__file__).parent / "data" / "campus_dataset" / "hourly_building.csv"
+            _csv_to_block = {
+                "A-Block": "A-Block", "Auditorium": "Bansuri Guru Auditorium",
+                "B-Block": "ITER Administrative Block", "C-Block": "C-Block (Academic)",
+                "Cafeteria": "ITER Cafeteria & Dining", "D-Block": "D-Block",
+                "Data-Science": "Centre for Data Science", "E-Block": "E-Block",
+                "EV-Station": "Campus Utility Substation", "F-Block": "F-Block",
+                "G-Block": "G-Block", "Hostel-1": "ITER Boys Hostel 1",
+                "Hostel-2": "ITER Boys Hostel 2", "Hostel-7": "ITER Boys Hostel 7",
+                "Library": "Central Library", "S-Block": "S-Block (Sports Complex)",
+            }
+            _block_to_csv = {v: k for k, v in _csv_to_block.items()}
+            # Research Wing shares Data-Science data
+            _block_to_csv["Research & Innovation Wing"] = "Data-Science"
+            _day_loads = {}
+            if _hist_path.exists():
+                with open(_hist_path, encoding="utf-8") as _f:
+                    for _r in csv_mod.DictReader(_f):
+                        if _r.get("date") == dataset_date:
+                            _day_loads[(_r.get("building"), int(_r.get("hour", 0)))] = float(_r.get("kwh", 0) or 0)
+            if _day_loads:
+                for _b in campus_blocks:
+                    _csv_name = _block_to_csv.get(_b.name, _b.name)
+                    _curve = [_day_loads.get((_csv_name, _h), None) for _h in range(24)]
+                    if all(_v is not None for _v in _curve):
+                        base_load_curves[_b.name] = [round(float(_v), 2) for _v in _curve]
+                        dataset_loads_used = True
+                if dataset_loads_used:
+                    log.info(f"[sim] Using dataset loads for {dataset_date} (data-driven twin)")
+        except Exception as _exc:
+            log.warning(f"[sim] Dataset load override failed for {dataset_date}: {_exc}")
 
     load_curves = {}
     for name, curve in base_load_curves.items():
@@ -1335,6 +1374,8 @@ def execute_simulation(
 
     return {
         "campus_buildings_attribution": "© OpenStreetMap contributors, ODbL",
+        "dataset_date": dataset_date,
+        "dataset_loads_used": bool(dataset_date and dataset_loads_used),
         "weather_attribution": weather.get("source", "Open-Meteo Solar API"),
         "weather_fetch_timestamp": weather.get("fetch_timestamp", ""),
         "blocks_geo": [
@@ -1603,6 +1644,10 @@ def run_custom_simulation():
         day_type = str(data.get("day_type", "weekday") or "weekday")
         if day_type not in ("weekday", "weekend"):
             day_type = "weekday"
+        # Optional dataset date (YYYY-MM-DD) for data-driven twin (real metered loads)
+        dataset_date = (data.get("dataset_date", "") or "").strip() or None
+        if dataset_date and (len(dataset_date) != 10 or dataset_date[4] != "-" or dataset_date[7] != "-"):
+            return jsonify({"error": "dataset_date must be YYYY-MM-DD"}), 400
 
         def _opt_hour(*keys):
             for k in keys:
@@ -1629,7 +1674,7 @@ def run_custom_simulation():
                       "solar_multiplier": solar_multiplier, "load_multiplier": load_multiplier,
                       "block_load_overrides": block_load_overrides, "day_name": day_name,
                       "day_type": day_type, "disaster_start_hour": disaster_start_hour,
-                      "disaster_end_hour": disaster_end_hour}
+                      "disaster_end_hour": disaster_end_hour, "dataset_date": dataset_date}
     _ck = _sim_cache_key(_cache_payload)
     if _ck and _ck in _SIM_CACHE:
         _ts, _res = _SIM_CACHE[_ck]
@@ -1654,6 +1699,7 @@ def run_custom_simulation():
             disaster_end_hour=disaster_end_hour,
             cyclone_start_hour=disaster_start_hour,
             cyclone_end_hour=disaster_end_hour,
+            dataset_date=dataset_date,
         )
     except Exception as exc:
         log.exception("simulation/run failed")
@@ -2291,22 +2337,78 @@ def get_day_ahead_forecast():
                 forecast_kw = round(max(0.0, historical_mean(building_name, h)), 2)
             hourly.append({"hour": h, "solar_kw": solar_kw, "forecast_kw": forecast_kw})
 
+        # Attach real MAPE/MAE via NAME_MAP (CSV short -> metrics)
+        csv_key = NAME_MAP.get(building_name, building_name)
+        b_metrics = metrics_map.get(csv_key) or metrics_map.get(building_name) or {}
         forecast[building_name] = {
             "building": building_name,
             "solar_kwp": solar_kwp,
             "hourly": hourly,
+            "mape_pct": b_metrics.get("mape_pct"),
+            "mae_kwh": b_metrics.get("mae_kwh"),
         }
 
     model_count = len(models)
+    # Load per-building MAPE from metrics.json (honest accuracy, not hardcoded)
+    metrics_map = {}
+    try:
+        import json as json_mod
+        metrics_path = Path(__file__).parent / "data" / "forecast_models" / "metrics.json"
+        if metrics_path.exists():
+            with open(metrics_path, encoding="utf-8") as mf:
+                metrics_data = json_mod.load(mf)
+                for bname, m in (metrics_data.get("buildings") or {}).items():
+                    metrics_map[bname] = {
+                        "mape_pct": m.get("mape_pct"),
+                        "mae_kwh": m.get("mae_kwh"),
+                    }
+    except Exception as exc:
+        log.warning(f"Could not load forecast metrics: {exc}")
     return jsonify({
         "date": target_date_str,
         "forecast": forecast,
         "models_used": model_count,
+        "metrics": metrics_map,
         "note": f"Live inference from {model_count} trained models" if model_count else "Historical 7-day mean forecast (models unavailable - sklearn version)",
     })
 
-# ---- Campus meter dataset (see data/generate_campus_dataset.py) ----
-    return jsonify({"meter_id": meter_id, "date": date, "readings": drill_meter(meter_id, date)})
+# ---- Single-meter drill-down (joins rooms.csv for floor/room/type) ----
+@app.route("/api/history/campus/meter", methods=["GET"])
+def get_campus_meter():
+    try:
+        from data.campus_dataset_store import dataset_present, drill_meter
+    except ImportError as exc:
+        return jsonify({"error": f"Dataset store unavailable: {exc}"}), 500
+    if not dataset_present():
+        return jsonify({"error": "Campus meter dataset not generated on this server"}), 404
+    meter_id = (request.args.get("meter_id", "") or "").strip()
+    date = (request.args.get("date", "") or "").strip()
+    if not meter_id:
+        return jsonify({"error": "meter_id required"}), 400
+    if len(date) != 10 or date[4] != "-" or date[7] != "-":
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+    # Join room metadata (building, floor, room, type)
+    room_info = {}
+    try:
+        from data.campus_dataset_store import _load_rooms
+        for r in _load_rooms():
+            if r.get("meter_id") == meter_id:
+                room_info = {
+                    "building": r.get("building"),
+                    "floor": r.get("floor"),
+                    "room": r.get("room"),
+                    "type": r.get("type"),
+                    "connected_kw": float(r.get("kw", 0) or 0),
+                }
+                break
+    except Exception:
+        pass
+    return jsonify({
+        "meter_id": meter_id,
+        "date": date,
+        **room_info,
+        "readings": drill_meter(meter_id, date),
+    })
 
 
 # Frontend static files routing

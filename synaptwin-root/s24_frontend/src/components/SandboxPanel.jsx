@@ -604,6 +604,47 @@ export default function SandboxPanel({
             </div>
           )}
 
+          {/* 3b. Dataset Date (data-driven twin: real metered loads) */}
+          <div className="control-item">
+            <div className="control-label-row">
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Clock size={15} color="#38bdf8" />
+                <span>Dataset Date (Data-Driven Loads)</span>
+              </span>
+              <span className="control-val">
+                {simParams.dataset_date || 'Synthetic'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="date"
+                min="2026-01-01"
+                max="2026-12-31"
+                value={simParams.dataset_date || ''}
+                onChange={(e) => onParamChange({ dataset_date: e.target.value || null }, true)}
+                className="custom-select"
+                style={{ flex: 1, padding: '7px 10px', fontSize: '12px' }}
+                title="Select a 2026 date to use real metered loads from the campus dataset instead of synthetic profiles. Clear to revert to synthetic."
+              />
+              {simParams.dataset_date && (
+                <button
+                  type="button"
+                  className="btn-ctrl"
+                  style={{ fontSize: '11px', padding: '6px 10px' }}
+                  onClick={() => onParamChange({ dataset_date: null }, true)}
+                  title="Clear date and revert to synthetic load profiles"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+              {simParams.dataset_date
+                ? `Using real metered loads from ${simParams.dataset_date} (hourly_building.csv). Solar + battery + optimizer unchanged.`
+                : 'Synthetic diurnal profiles. Pick a date to drive simulation with real dataset loads.'}
+            </div>
+          </div>
+
           {/* 4. Second-Life Battery Aging Slider */}
           <div className="control-item">
             <div className="control-label-row">

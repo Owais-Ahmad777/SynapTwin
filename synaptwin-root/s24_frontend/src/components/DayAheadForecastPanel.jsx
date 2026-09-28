@@ -80,6 +80,9 @@ export default function DayAheadForecastPanel() {
 
   const totalSolar = chartData.reduce((a, d) => a + d.solar, 0);
   const peakSolar = Math.max(...chartData.map((d) => d.solar), 0);
+  // Real per-building MAPE attached by backend (not hardcoded 3.8%)
+  const mapeText = buildingData.mape_pct != null ? `${buildingData.mape_pct}%` : '—';
+  const maeText = buildingData.mae_kwh != null ? `${buildingData.mae_kwh} kWh` : '—';
 
   return (
     <div className="panel-card">
@@ -131,6 +134,14 @@ export default function DayAheadForecastPanel() {
           <div style={{ background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Peak Solar</div>
             <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--energy-green)' }}>{peakSolar.toFixed(1)} kW</div>
+          </div>
+          <div style={{ background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)' }} title="Mean Absolute Percentage Error on Oct-Dec 2026 test set">
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Model MAPE</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>{mapeText}</div>
+          </div>
+          <div style={{ background: 'var(--bg-secondary)', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border-subtle)' }} title="Mean Absolute Error on test set">
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Model MAE</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>{maeText}</div>
           </div>
         </div>
 
