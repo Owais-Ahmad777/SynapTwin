@@ -34,7 +34,7 @@ except ImportError:
     def _is_gemini_cfg():  # type: ignore
         return False
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-1.5-flash"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 
