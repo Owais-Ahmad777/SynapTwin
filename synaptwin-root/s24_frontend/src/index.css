@@ -4161,7 +4161,7 @@ select optgroup {
   }
 }
 
-/* --- Admin map bottom cards (admin branch only; building overlay untouched) --- */
+/* --- Admin map bottom cards (admin only; building overlay untouched) --- */
 .has-bottom-cards {
   display: flex;
   flex-direction: column;
