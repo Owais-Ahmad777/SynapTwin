@@ -18,7 +18,7 @@ export const NAV_ITEMS = [
   { id: 'disaster', label: 'Disaster Management', icon: ShieldAlert },
   { id: 'driveev', label: 'DriveEV', icon: Bike },
   { id: 'history30', label: '30-Day History', icon: CalendarDays },
-  { id: 'future5y', label: '5-Year History', icon: TrendingUp },
+  { id: 'future5y', label: '5-Year Prediction', icon: TrendingUp },
   { id: 'reports', label: 'Reports', icon: Files, children: REPORT_CHILDREN },
   { id: 'settings', label: 'Security Status', icon: Activity },
 ];

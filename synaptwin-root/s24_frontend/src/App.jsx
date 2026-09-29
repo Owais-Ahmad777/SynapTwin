@@ -527,7 +527,7 @@ export default function App() {
           <div className="st-page">
             <div className="st-page-head">
               <div className="st-eyebrow">PER-BUILDING • LIVE TELEMETRY</div>
-              <h2 className="st-page-title">5-Year History — {buildingName}</h2>
+              <h2 className="st-page-title">5-Year Prediction — {buildingName}</h2>
               <p className="st-page-sub">Per-building information only.</p>
             </div>
             <BuildingProjectionPanel buildingName={buildingName} />
@@ -536,7 +536,7 @@ export default function App() {
           <div className="st-page">
             <div className="st-page-head">
               <div className="st-eyebrow">Strategic Outlook</div>
-              <h2 className="st-page-title">5-Year History</h2>
+              <h2 className="st-page-title">5-Year Prediction</h2>
               <p className="st-page-sub">Long-horizon financial and energy outlook.</p>
             </div>
             <MultiYearTrends />
