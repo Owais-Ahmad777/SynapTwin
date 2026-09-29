@@ -13,7 +13,7 @@ export default function DayAheadForecastPanel() {
 
   useEffect(() => {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 45000);
+    const timer = setTimeout(() => ctrl.abort(), 90000);
     fetch('/api/forecast/day-ahead', { signal: ctrl.signal })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -31,7 +31,7 @@ export default function DayAheadForecastPanel() {
       .catch((err) => {
         clearTimeout(timer);
         if (err.name !== 'AbortError') setError(err.message);
-        else setError('Request timed out (45s) — backend cold start or slow.');
+        else setError('Request timed out (90s) — backend cold start or slow. Retry.');
         setLoading(false);
       });
     return () => {

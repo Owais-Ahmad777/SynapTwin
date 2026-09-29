@@ -2172,39 +2172,62 @@ def get_day_ahead_forecast():
         return jsonify({"error": "Forecast models not found. Run data/train_load_forecast.py first."}), 404
 
     # Load per-building models (optional - forecast works without them)
-    models = {}
+    # Module-level caches (persist across requests per worker)
+    global _FORECAST_MODELS_CACHE, _FORECAST_SERIES_CACHE, _FORECAST_WEATHER_CACHE
     try:
-        for model_file in models_dir.glob("model_*.joblib"):
-            building_name = model_file.stem.replace("model_", "")
-            try:
-                models[building_name] = joblib.load(models_dir / model_file)
-            except Exception as model_exc:
-                log.warning(f"Failed to load model {model_file.name}: {model_exc}")
-                continue
-    except Exception as exc:
-        log.warning(f"Model loading failed, using simplified forecast: {exc}")
+        _FORECAST_MODELS_CACHE
+    except NameError:
+        _FORECAST_MODELS_CACHE = None
+    try:
+        _FORECAST_SERIES_CACHE
+    except NameError:
+        _FORECAST_SERIES_CACHE = None
+        _FORECAST_WEATHER_CACHE = None
+    if _FORECAST_MODELS_CACHE is None:
         models = {}
+        try:
+            for model_file in models_dir.glob("model_*.joblib"):
+                building_name = model_file.stem.replace("model_", "")
+                try:
+                    models[building_name] = joblib.load(models_dir / model_file)
+                except Exception as model_exc:
+                    log.warning(f"Failed to load model {model_file.name}: {model_exc}")
+                    continue
+        except Exception as exc:
+            log.warning(f"Model loading failed, using simplified forecast: {exc}")
+            models = {}
+        _FORECAST_MODELS_CACHE = models
+        log.info(f"[forecast] Loaded {len(models)} models into cache")
+    else:
+        models = _FORECAST_MODELS_CACHE
 
     # Load campus blocks for solar capacity
     blocks = {b.name: b for b in campus_blocks}
 
-    # Load historical series for lag features (same source as training)
+    # Load historical series for lag features (cached per worker)
     import csv
     import math
     from datetime import datetime as dt_mod
-    hist_path = Path(__file__).parent / "data" / "campus_dataset" / "hourly_building.csv"
-    weather_path = Path(__file__).parent / "data" / "campus_dataset" / "weather.csv"
-    series = {}
-    weather_map = {}
-    try:
-        with open(hist_path, encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                series.setdefault(r["building"], {})[(r["date"], int(r["hour"]))] = float(r["kwh"])
-        with open(weather_path, encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                weather_map[r["date"]] = (float(r["tmax_c"]), r.get("rain") == "1")
-    except OSError as exc:
-        log.warning(f"Historical data unavailable for forecast lags: {exc}")
+    if _FORECAST_SERIES_CACHE is None:
+        hist_path = Path(__file__).parent / "data" / "campus_dataset" / "hourly_building.csv"
+        weather_path = Path(__file__).parent / "data" / "campus_dataset" / "weather.csv"
+        series = {}
+        weather_map = {}
+        try:
+            with open(hist_path, encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    series.setdefault(r["building"], {})[(r["date"], int(r["hour"]))] = float(r["kwh"])
+            with open(weather_path, encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    weather_map[r["date"]] = (float(r["tmax_c"]), r.get("rain") == "1")
+            _FORECAST_SERIES_CACHE = series
+            _FORECAST_WEATHER_CACHE = weather_map
+            log.info(f"[forecast] Loaded {len(series)} building series into cache")
+        except OSError as exc:
+            log.warning(f"Historical data unavailable for forecast lags: {exc}")
+    else:
+        series = _FORECAST_SERIES_CACHE
+        weather_map = _FORECAST_WEATHER_CACHE or {}
 
     # Parse target date for calendar features
     try:
