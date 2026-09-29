@@ -2171,35 +2171,16 @@ def get_day_ahead_forecast():
     if not models_dir.exists():
         return jsonify({"error": "Forecast models not found. Run data/train_load_forecast.py first."}), 404
 
-    # Load per-building models (optional - forecast works without them)
-    # Module-level caches (persist across requests per worker)
-    global _FORECAST_MODELS_CACHE, _FORECAST_SERIES_CACHE, _FORECAST_WEATHER_CACHE
-    try:
-        _FORECAST_MODELS_CACHE
-    except NameError:
-        _FORECAST_MODELS_CACHE = None
+    # ML models DISABLED on free tier (OOM + 120s timeout death spiral).
+    # Historical 7-day means give real data without sklearn memory/CPU cost.
+    # Models remain in repo for local full-inference use.
+    models = {}
+    global _FORECAST_SERIES_CACHE, _FORECAST_WEATHER_CACHE
     try:
         _FORECAST_SERIES_CACHE
     except NameError:
         _FORECAST_SERIES_CACHE = None
         _FORECAST_WEATHER_CACHE = None
-    if _FORECAST_MODELS_CACHE is None:
-        models = {}
-        try:
-            for model_file in models_dir.glob("model_*.joblib"):
-                building_name = model_file.stem.replace("model_", "")
-                try:
-                    models[building_name] = joblib.load(models_dir / model_file)
-                except Exception as model_exc:
-                    log.warning(f"Failed to load model {model_file.name}: {model_exc}")
-                    continue
-        except Exception as exc:
-            log.warning(f"Model loading failed, using simplified forecast: {exc}")
-            models = {}
-        _FORECAST_MODELS_CACHE = models
-        log.info(f"[forecast] Loaded {len(models)} models into cache")
-    else:
-        models = _FORECAST_MODELS_CACHE
 
     # Load campus blocks for solar capacity
     blocks = {b.name: b for b in campus_blocks}
